@@ -4,12 +4,20 @@ pragma solidity ^0.8.22;
 import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
-
+import "@openzeppelin/contracts/interfaces/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
 import "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
+import "@openzeppelin/contracts/token/common/ERC2981.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 contract marketplace is ERC1155Holder, ERC721Holder {
+    using SafeERC20 for IERC20;
     error onlyCreatorCanCall();
+
+    uint256 constant PLATFORM_FEE = 100;
+    uint256 constant MAX_BPS = 10000;
+    address constant PLATFORM_OWNER =
+        0x417C83C2674C85010A453a7496407B72E0a30ADF;
     /// @notice Type of the tokens that can be listed for sale.
     enum TokenType {
         ERC1155,
@@ -60,7 +68,15 @@ contract marketplace is ERC1155Holder, ERC721Holder {
         _;
     }
 
+    modifier mustNotDeleted(uint256 _listingId) {
+        if (Listings[_listingId].deleted) {
+            revert();
+        }
+        _;
+    }
+
     constructor() {}
+
     //approve and cancel [check]
     function createList(
         address _tokenContract,
@@ -114,6 +130,7 @@ contract marketplace is ERC1155Holder, ERC721Holder {
             false
         );
         Listings.push(newListing);
+        // event
     }
 
     function editListing(
@@ -122,7 +139,7 @@ contract marketplace is ERC1155Holder, ERC721Holder {
         uint256 _price,
         uint256 _durationUntilEnd,
         uint256 _quantity
-    ) external onlyCreator(_listingId) {
+    ) external onlyCreator(_listingId) mustNotDeleted(_listingId) {
         require(_price != 0, "");
         require(_durationUntilEnd != 0, "");
         require(_quantity != 0, "");
@@ -174,6 +191,7 @@ contract marketplace is ERC1155Holder, ERC721Holder {
             );
         }
         Listings[_listingId] = newListing;
+        // event
     }
 
     function cancelListing(uint256 _listingId)
@@ -181,15 +199,91 @@ contract marketplace is ERC1155Holder, ERC721Holder {
         onlyCreator(_listingId)
     {
         Listing memory target = Listings[_listingId];
-        if(target.isAuction){
-            target.deleted = true;
-            Listings[_listingId] = target; 
-            // event 
-        }else{
-            target.deleted = true;
-            Listings[_listingId] = target; 
+        target.deleted = true;
+        if (target.isAuction) {
+            if (target.tokenType == TokenType.ERC1155) {
+                IERC1155(target.tokenContract).safeTransferFrom(
+                    address(this),
+                    target.creator,
+                    target.tokenId,
+                    target.quantity,
+                    ""
+                );
+            } else {
+                IERC721(target.tokenContract).safeTransferFrom(
+                    address(this),
+                    target.creator,
+                    target.tokenId
+                );
+            }
+            Listings[_listingId] = target;
+            // event
+        } else {
+            Listings[_listingId] = target;
             // event
         }
+    }
+
+    function buy(uint256 _listingId, uint256 _quantity) external {
+        Listing memory target = Listings[_listingId];
+        uint256 totalPrice;
+        if (target.tokenType == TokenType.ERC1155) {
+            totalPrice = target.price * _quantity;
+        } else {
+            totalPrice = target.price;
+        }
+        checkBalanceAndAllowance(msg.sender, target.paymentToken, totalPrice);
+        target.quantity -= _quantity;
+        Listings[_listingId] = target;
+        uint256 platformFeeCut = (totalPrice * PLATFORM_FEE) / MAX_BPS;
+        uint256 royaltyCut;
+        address royaltyRecipient;
+        try
+            IERC2981(target.tokenContract).royaltyInfo(
+                target.tokenId,
+                totalPrice
+            )
+        returns (address royaltyFeeRecipient, uint256 royaltyFeeAmount) {
+            if (royaltyFeeRecipient != address(0) && royaltyFeeAmount > 0) {
+                require(
+                    royaltyFeeAmount + platformFeeCut <= totalPrice,
+                    "fees exceed the price"
+                );
+                royaltyRecipient = royaltyFeeRecipient;
+                royaltyCut = royaltyFeeAmount;
+            }
+        } catch {}
+        IERC20(target.paymentToken).safeTransferFrom(
+            msg.sender,
+            PLATFORM_OWNER,
+            platformFeeCut
+        );
+        IERC20(target.paymentToken).safeTransferFrom(
+            msg.sender,
+            royaltyRecipient,
+            royaltyCut
+        );
+        IERC20(target.paymentToken).safeTransferFrom(
+            msg.sender,
+            target.creator,
+            totalPrice
+        );
+        if (target.tokenType == TokenType.ERC1155) {
+            IERC1155(target.tokenContract).safeTransferFrom(
+                msg.sender,
+                target.creator,
+                target.tokenId,
+                _quantity,
+                ""
+            );
+        } else if (target.tokenType == TokenType.ERC721) {
+            IERC721(target.tokenContract).safeTransferFrom(
+                msg.sender,
+                target.creator,
+                target.tokenId
+            );
+        }
+        // event
     }
 
     /// @dev Returns the interface supported by a contract.
@@ -233,5 +327,17 @@ contract marketplace is ERC1155Holder, ERC721Holder {
             bool isApprove = token.isApprovedForAll(_owner, address(this));
             require(isApprove, "");
         }
+    }
+
+    function checkBalanceAndAllowance(
+        address checkAddress,
+        address token,
+        uint256 price
+    ) internal view {
+        require(
+            price <= IERC20(token).balanceOf(checkAddress) &&
+                price <= IERC20(token).allowance(checkAddress, address(this)),
+            ""
+        );
     }
 }
