@@ -16,6 +16,7 @@ contract marketplace is ERC1155Holder, ERC721Holder {
 
     uint256 constant PLATFORM_FEE = 100;
     uint256 constant MAX_BPS = 10000;
+    uint256 constant BID_BUFFER_BPS = 500;
     address constant PLATFORM_OWNER =
         0x417C83C2674C85010A453a7496407B72E0a30ADF;
     /// @notice Type of the tokens that can be listed for sale.
@@ -32,6 +33,7 @@ contract marketplace is ERC1155Holder, ERC721Holder {
         uint256 listingId;
         address bidder;
         uint256 bid;
+        uint256 quantity;
     }
 
     struct Listing {
@@ -48,16 +50,14 @@ contract marketplace is ERC1155Holder, ERC721Holder {
         bool ended;
         bool isAuction;
         address highestBidder;
-        uint256 highestBid;
-        // this [check]
+        uint256 minBid;
         bool deleted;
     }
 
     // listingId => bidder => bid bids;
-    mapping(uint256 => mapping(address => uint256)) public bids;
+    mapping(uint256 => Bid[]) public bids;
     mapping(address => bool) public deposited;
 
-    // this [check]
     Listing[] Listings;
 
     modifier onlyCreator(uint256 _listingId) {
@@ -77,7 +77,6 @@ contract marketplace is ERC1155Holder, ERC721Holder {
 
     constructor() {}
 
-    //approve and cancel [check]
     function createList(
         address _tokenContract,
         uint256 _tokenId,
@@ -85,6 +84,7 @@ contract marketplace is ERC1155Holder, ERC721Holder {
         uint256 _price,
         uint256 _durationUntilEnd,
         uint256 _quantity,
+        uint256 _minBid,
         bool _isAuction
     ) external {
         require(_price != 0, "");
@@ -111,7 +111,7 @@ contract marketplace is ERC1155Holder, ERC721Holder {
                 );
             }
         }
-        uint256 highestBid = _isAuction ? _price : 0;
+        _price = _isAuction ? _price : 0;
         Listing memory newListing = Listing(
             Listings.length,
             _tokenContract,
@@ -126,13 +126,14 @@ contract marketplace is ERC1155Holder, ERC721Holder {
             _isAuction,
             false,
             address(0),
-            highestBid,
+            _minBid,
             false
         );
         Listings.push(newListing);
         // event
     }
 
+    //not ended
     function editListing(
         uint256 _listingId,
         address _paymentToken,
@@ -164,7 +165,7 @@ contract marketplace is ERC1155Holder, ERC721Holder {
             target.isAuction,
             false,
             address(0),
-            target.highestBid,
+            target.minBid,
             false
         );
         if (isAuction && tokenType == TokenType.ERC1155) {
@@ -194,9 +195,11 @@ contract marketplace is ERC1155Holder, ERC721Holder {
         // event
     }
 
+    //not ended
     function cancelListing(uint256 _listingId)
         external
         onlyCreator(_listingId)
+        mustNotDeleted(_listingId)
     {
         Listing memory target = Listings[_listingId];
         target.deleted = true;
@@ -224,16 +227,17 @@ contract marketplace is ERC1155Holder, ERC721Holder {
         }
     }
 
-    function buy(uint256 _listingId, uint256 _quantity) external {
+    //not ended
+    function buy(uint256 _listingId, uint256 _quantity)
+        external
+        mustNotDeleted(_listingId)
+    {
         Listing memory target = Listings[_listingId];
-        uint256 totalPrice;
-        if (target.tokenType == TokenType.ERC1155) {
-            totalPrice = target.price * _quantity;
-        } else {
-            totalPrice = target.price;
-        }
-        checkBalanceAndAllowance(msg.sender, target.paymentToken, totalPrice);
+        uint256 totalPrice = target.tokenType == TokenType.ERC1155
+            ? target.price * _quantity
+            : target.price;
         target.quantity -= _quantity;
+        target.ended = target.quantity == 0;
         Listings[_listingId] = target;
         uint256 platformFeeCut = (totalPrice * PLATFORM_FEE) / MAX_BPS;
         uint256 royaltyCut;
@@ -253,6 +257,11 @@ contract marketplace is ERC1155Holder, ERC721Holder {
                 royaltyCut = royaltyFeeAmount;
             }
         } catch {}
+        checkBalanceAndAllowance(
+            msg.sender,
+            target.paymentToken,
+            totalPrice + platformFeeCut + royaltyCut
+        );
         IERC20(target.paymentToken).safeTransferFrom(
             msg.sender,
             PLATFORM_OWNER,
@@ -270,20 +279,48 @@ contract marketplace is ERC1155Holder, ERC721Holder {
         );
         if (target.tokenType == TokenType.ERC1155) {
             IERC1155(target.tokenContract).safeTransferFrom(
-                msg.sender,
                 target.creator,
+                msg.sender,
                 target.tokenId,
                 _quantity,
                 ""
             );
         } else if (target.tokenType == TokenType.ERC721) {
             IERC721(target.tokenContract).safeTransferFrom(
-                msg.sender,
                 target.creator,
+                msg.sender,
                 target.tokenId
             );
         }
         // event
+    }
+
+    function bid(
+        uint256 _listingId,
+        address _bidder,
+        uint256 _bidPrice,
+        uint256 _quantity
+    ) external {
+        require(_bidder != address(0), "");
+        require(_bidPrice != 0, "");
+        require(_quantity != 0, "");
+        Bid memory newBid = Bid(_listingId, _bidder, _bidPrice, _quantity);
+        Bid[] memory bidsOfListing = bids[_listingId];
+        Bid memory currentHighestBid = bidsOfListing[bidsOfListing.length];
+        if (bidsOfListing.length > 0) {
+            require(
+                // include quantitiy
+                (newBid.bid > currentHighestBid.bid &&
+                    ((newBid.bid - currentHighestBid.bid) * MAX_BPS) /
+                        currentHighestBid.bid >=
+                    BID_BUFFER_BPS),
+                ""
+            );
+        } else {
+            require(newBid.bid >= Listings[_listingId].minBid);
+        }
+        bids[_listingId].push(newBid);
+        // IERC20(Listings[_listingId].paymentToken).safeTransferFrom(msg.sender,address(this),)
     }
 
     /// @dev Returns the interface supported by a contract.
