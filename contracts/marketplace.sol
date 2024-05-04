@@ -15,8 +15,10 @@ contract marketplace is ERC1155Holder, ERC721Holder {
     error onlyCreatorCanCall();
 
     uint256 constant PLATFORM_FEE = 100;
-    uint256 constant MAX_BPS = 10000;
-    uint256 constant BID_BUFFER_BPS = 500;
+    // uint256 constant MAX_BPS = 10000;
+    // uint256 constant BID_BUFFER_BPS = 500;
+    uint256 MAX_BPS;
+    uint256 BID_BUFFER_BPS;
     address constant PLATFORM_OWNER =
         0x417C83C2674C85010A453a7496407B72E0a30ADF;
     /// @notice Type of the tokens that can be listed for sale.
@@ -76,6 +78,12 @@ contract marketplace is ERC1155Holder, ERC721Holder {
     }
 
     constructor() {}
+
+    //initializer
+    function initialize(uint256 _maxBps, uint256 _bidBufferBps)external {
+        MAX_BPS = _maxBps;
+        BID_BUFFER_BPS = _bidBufferBps;
+    }
 
     function createList(
         address _tokenContract,
@@ -304,23 +312,32 @@ contract marketplace is ERC1155Holder, ERC721Holder {
         require(_bidder != address(0), "");
         require(_bidPrice != 0, "");
         require(_quantity != 0, "");
+        Listing memory target = Listings[_listingId];
         Bid memory newBid = Bid(_listingId, _bidder, _bidPrice, _quantity);
         Bid[] memory bidsOfListing = bids[_listingId];
         Bid memory currentHighestBid = bidsOfListing[bidsOfListing.length];
+        uint256 newBidPrice = newBid.bid * newBid.quantity;
+        uint256 currentBidPrice = currentHighestBid.bid *
+            currentHighestBid.quantity;
         if (bidsOfListing.length > 0) {
             require(
                 // include quantitiy
-                (newBid.bid > currentHighestBid.bid &&
-                    ((newBid.bid - currentHighestBid.bid) * MAX_BPS) /
-                        currentHighestBid.bid >=
+                (newBidPrice > currentBidPrice &&
+                    ((newBidPrice - currentBidPrice) * MAX_BPS) /
+                        currentBidPrice >=
                     BID_BUFFER_BPS),
                 ""
             );
         } else {
-            require(newBid.bid >= Listings[_listingId].minBid);
+            require(newBidPrice >= target.minBid);
         }
         bids[_listingId].push(newBid);
-        // IERC20(Listings[_listingId].paymentToken).safeTransferFrom(msg.sender,address(this),)
+        IERC20(target.paymentToken).safeTransferFrom(
+            msg.sender,
+            address(this),
+            newBidPrice
+        );
+        // event
     }
 
     /// @dev Returns the interface supported by a contract.
