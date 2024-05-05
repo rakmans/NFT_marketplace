@@ -80,7 +80,7 @@ contract marketplace is ERC1155Holder, ERC721Holder {
     constructor() {}
 
     //initializer
-    function initialize(uint256 _maxBps, uint256 _bidBufferBps)external {
+    function initialize(uint256 _maxBps, uint256 _bidBufferBps) external {
         MAX_BPS = _maxBps;
         BID_BUFFER_BPS = _bidBufferBps;
     }
@@ -95,9 +95,8 @@ contract marketplace is ERC1155Holder, ERC721Holder {
         uint256 _minBid,
         bool _isAuction
     ) external {
-        require(_price != 0, "");
-        require(_durationUntilEnd != 0, "");
-        require(_quantity != 0, "");
+        require(_durationUntilEnd != 0, "duration != 0");
+        require(_quantity != 0, "quantity != 0");
         address creator = msg.sender;
         TokenType tokenType = getTokenType(_tokenContract);
         _quantity = tokenType == TokenType.ERC721 ? 1 : _quantity;
@@ -119,7 +118,7 @@ contract marketplace is ERC1155Holder, ERC721Holder {
                 );
             }
         }
-        _price = _isAuction ? _price : 0;
+        _price = _isAuction ? 0 : _price;
         Listing memory newListing = Listing(
             Listings.length,
             _tokenContract,
@@ -131,8 +130,8 @@ contract marketplace is ERC1155Holder, ERC721Holder {
             block.timestamp,
             block.timestamp + _durationUntilEnd,
             _quantity,
-            _isAuction,
             false,
+            _isAuction,
             address(0),
             _minBid,
             false
@@ -204,11 +203,9 @@ contract marketplace is ERC1155Holder, ERC721Holder {
     }
 
     //not ended
-    function cancelListing(uint256 _listingId)
-        external
-        onlyCreator(_listingId)
-        mustNotDeleted(_listingId)
-    {
+    function cancelListing(
+        uint256 _listingId
+    ) external onlyCreator(_listingId) mustNotDeleted(_listingId) {
         Listing memory target = Listings[_listingId];
         target.deleted = true;
         if (target.isAuction) {
@@ -236,10 +233,10 @@ contract marketplace is ERC1155Holder, ERC721Holder {
     }
 
     //not ended
-    function buy(uint256 _listingId, uint256 _quantity)
-        external
-        mustNotDeleted(_listingId)
-    {
+    function buy(
+        uint256 _listingId,
+        uint256 _quantity
+    ) external mustNotDeleted(_listingId) {
         Listing memory target = Listings[_listingId];
         uint256 totalPrice = target.tokenType == TokenType.ERC1155
             ? target.price * _quantity
@@ -340,12 +337,16 @@ contract marketplace is ERC1155Holder, ERC721Holder {
         // event
     }
 
+    function getListing(
+        uint256 listingId
+    ) external view returns (Listing memory) {
+        return (Listings[listingId]);
+    }
+
     /// @dev Returns the interface supported by a contract.
-    function getTokenType(address _assetContract)
-        internal
-        view
-        returns (TokenType tokenType)
-    {
+    function getTokenType(
+        address _assetContract
+    ) internal view returns (TokenType tokenType) {
         if (
             IERC165(_assetContract).supportsInterface(
                 type(IERC1155).interfaceId
