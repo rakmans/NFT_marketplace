@@ -28,6 +28,8 @@ describe("marketplace", function () {
         const Ether = await ethers.getContractFactory("Ether");
         const ether = await Ether.deploy();
 
+        await ether.transfer(otherAccount, 1000);
+
         await marketplace.initialize(10000, 500);
 
         return {
@@ -41,10 +43,39 @@ describe("marketplace", function () {
     }
 
     describe("Deployment", function () {
-        it("test with ERC721 sale mode listing", async function () {
-            const { rakmansNFT, ether, marketplace, owner } = await loadFixture(
-                deploy
+        it("edit listing", async () => {
+            const { rakmansNFT, ether, marketplace, owner, otherAccount } =
+                await loadFixture(deploy);
+
+            await rakmansNFT.safeMint(owner, "rakmansNFT.github.io");
+
+            await rakmansNFT.approve(marketplace.getAddress(), 0);
+
+            await marketplace.createList(
+                rakmansNFT.getAddress(),
+                0,
+                ether.getAddress(),
+                10,
+                1000,
+                1,
+                0,
+                false
             );
+
+            let listing = await marketplace.getListing(0);
+
+            expect(listing.price).to.equal(10);
+
+            await marketplace.editListing(0,ether.getAddress(),100,1000,1);
+
+            listing = await marketplace.getListing(0);
+
+            expect(listing.price).to.equal(100);
+
+        });
+        it("test with ERC721 sale mode listing", async function () {
+            const { rakmansNFT, ether, marketplace, owner, otherAccount } =
+                await loadFixture(deploy);
 
             await rakmansNFT.safeMint(owner, "rakmansNFT.github.io");
 
@@ -63,15 +94,34 @@ describe("marketplace", function () {
 
             const listing = await marketplace.getListing(0);
 
+            await ether.connect(otherAccount).approve(marketplace, 10);
+
+            await marketplace.connect(otherAccount).buy(0, 1);
+
+            //     await expect(Lock.deploy(latestTime, { value: 1 })).to.be.revertedWith(
+            //         "Unlock time should be in the future"
+            //     );
+            expect(await rakmansNFT.ownerOf(0)).to.equal(otherAccount);
+
+            expect(await ether.balanceOf(owner)).to.equal(9010);
+
             // console.log(listing)
         });
 
         it("test with ERC721 Auction mode listing", async function () {
             const { rakmansERC1155, ether, marketplace, owner } =
                 await loadFixture(deploy);
-            await rakmansERC1155.mint(owner, 0, 10,"0x0000000000000000000000000000000000000000000000000000000000000000" );
+            await rakmansERC1155.mint(
+                owner,
+                0,
+                10,
+                "0x0000000000000000000000000000000000000000000000000000000000000000"
+            );
 
-            await rakmansERC1155.setApprovalForAll(marketplace.getAddress(), true);
+            await rakmansERC1155.setApprovalForAll(
+                marketplace.getAddress(),
+                true
+            );
 
             await marketplace.createList(
                 rakmansERC1155.getAddress(),
@@ -85,7 +135,6 @@ describe("marketplace", function () {
             );
 
             const listing = await marketplace.getListing(0);
-            console.log(listing)
 
             // console.log(listing)
         });

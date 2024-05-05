@@ -19,8 +19,9 @@ contract marketplace is ERC1155Holder, ERC721Holder {
     // uint256 constant BID_BUFFER_BPS = 500;
     uint256 MAX_BPS;
     uint256 BID_BUFFER_BPS;
-    address constant PLATFORM_OWNER =
-        0x417C83C2674C85010A453a7496407B72E0a30ADF;
+    address PLATFORM_OWNER ;
+    // address constant PLATFORM_OWNER =
+    //     0x417C83C2674C85010A453a7496407B72E0a30ADF;
     /// @notice Type of the tokens that can be listed for sale.
     enum TokenType {
         ERC1155,
@@ -83,6 +84,7 @@ contract marketplace is ERC1155Holder, ERC721Holder {
     function initialize(uint256 _maxBps, uint256 _bidBufferBps) external {
         MAX_BPS = _maxBps;
         BID_BUFFER_BPS = _bidBufferBps;
+        PLATFORM_OWNER = msg.sender;
     }
 
     function createList(
@@ -238,9 +240,7 @@ contract marketplace is ERC1155Holder, ERC721Holder {
         uint256 _quantity
     ) external mustNotDeleted(_listingId) {
         Listing memory target = Listings[_listingId];
-        uint256 totalPrice = target.tokenType == TokenType.ERC1155
-            ? target.price * _quantity
-            : target.price;
+        uint256 totalPrice = target.price * _quantity;
         target.quantity -= _quantity;
         target.ended = target.quantity == 0;
         Listings[_listingId] = target;
@@ -272,11 +272,13 @@ contract marketplace is ERC1155Holder, ERC721Holder {
             PLATFORM_OWNER,
             platformFeeCut
         );
-        IERC20(target.paymentToken).safeTransferFrom(
-            msg.sender,
-            royaltyRecipient,
-            royaltyCut
-        );
+        if (royaltyCut != 0 && royaltyRecipient != address(0)) {
+            IERC20(target.paymentToken).safeTransferFrom(
+                msg.sender,
+                royaltyRecipient,
+                royaltyCut
+            );
+        }
         IERC20(target.paymentToken).safeTransferFrom(
             msg.sender,
             target.creator,
