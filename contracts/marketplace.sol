@@ -13,13 +13,14 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 contract marketplace is ERC1155Holder, ERC721Holder {
     using SafeERC20 for IERC20;
     error onlyCreatorCanCall();
-
-    uint256 constant PLATFORM_FEE = 100;
+    error listingDeleted();
+    error listingEnded();
     // uint256 constant MAX_BPS = 10000;
     // uint256 constant BID_BUFFER_BPS = 500;
+    uint256 PLATFORM_FEE;
     uint256 MAX_BPS;
     uint256 BID_BUFFER_BPS;
-    address PLATFORM_OWNER ;
+    address PLATFORM_OWNER;
     // address constant PLATFORM_OWNER =
     //     0x417C83C2674C85010A453a7496407B72E0a30ADF;
     /// @notice Type of the tokens that can be listed for sale.
@@ -36,7 +37,6 @@ contract marketplace is ERC1155Holder, ERC721Holder {
         uint256 listingId;
         address bidder;
         uint256 bid;
-        uint256 quantity;
     }
 
     struct Listing {
@@ -53,7 +53,6 @@ contract marketplace is ERC1155Holder, ERC721Holder {
         bool ended;
         bool isAuction;
         address highestBidder;
-        uint256 minBid;
         bool deleted;
     }
 
@@ -62,6 +61,23 @@ contract marketplace is ERC1155Holder, ERC721Holder {
     mapping(address => bool) public deposited;
 
     Listing[] Listings;
+
+    event CreatListing(
+        uint256 indexed ListingId,
+        address indexed Creator,
+        address indexed TokenContract,
+        uint256 TokenId,
+        uint256 Quantity,
+        bool Auction
+    );
+
+    event EditListing(
+        uint256 indexed ListingId,
+        address indexed Creator,
+        address indexed TokenContract,
+        uint256 TokenId,
+        uint256 Quantity
+    );
 
     modifier onlyCreator(uint256 _listingId) {
         address creator = Listings[_listingId].creator;
@@ -73,18 +89,27 @@ contract marketplace is ERC1155Holder, ERC721Holder {
 
     modifier mustNotDeleted(uint256 _listingId) {
         if (Listings[_listingId].deleted) {
-            revert();
+            revert listingDeleted();
         }
         _;
     }
 
-    constructor() {}
+    modifier notEnded(uint256 _listingId) {
+        if (Listings[_listingId].ended) {
+            revert listingEnded();
+        }
+        _;
+    }
 
-    //initializer
-    function initialize(uint256 _maxBps, uint256 _bidBufferBps) external {
-        MAX_BPS = _maxBps;
-        BID_BUFFER_BPS = _bidBufferBps;
+    constructor(
+        uint256 _maxBps,
+        uint256 _bidBufferBps,
+        uint256 _platformFee
+    ) {
         PLATFORM_OWNER = msg.sender;
+        PLATFORM_FEE = _platformFee;
+        BID_BUFFER_BPS = _bidBufferBps;
+        MAX_BPS = _maxBps;
     }
 
     function createList(
@@ -94,9 +119,9 @@ contract marketplace is ERC1155Holder, ERC721Holder {
         uint256 _price,
         uint256 _durationUntilEnd,
         uint256 _quantity,
-        uint256 _minBid,
         bool _isAuction
     ) external {
+        require(_price != 0, "price != 0");
         require(_durationUntilEnd != 0, "duration != 0");
         require(_quantity != 0, "quantity != 0");
         address creator = msg.sender;
@@ -104,25 +129,17 @@ contract marketplace is ERC1155Holder, ERC721Holder {
         _quantity = tokenType == TokenType.ERC721 ? 1 : _quantity;
         validateToken(_tokenContract, _tokenId, creator, _quantity, tokenType);
         if (_isAuction) {
-            if (tokenType == TokenType.ERC721) {
-                IERC721(_tokenContract).safeTransferFrom(
-                    creator,
-                    address(this),
-                    _tokenId
-                );
-            } else {
-                IERC1155(_tokenContract).safeTransferFrom(
-                    creator,
-                    address(this),
-                    _tokenId,
-                    _quantity,
-                    ""
-                );
-            }
+            transferToken(
+                _tokenContract,
+                creator,
+                address(this),
+                _tokenId,
+                _quantity,
+                tokenType
+            );
         }
-        _price = _isAuction ? 0 : _price;
         Listing memory newListing = Listing(
-            Listings.length,
+            Listings.length + 1,
             _tokenContract,
             _tokenId,
             tokenType,
@@ -135,11 +152,17 @@ contract marketplace is ERC1155Holder, ERC721Holder {
             false,
             _isAuction,
             address(0),
-            _minBid,
             false
         );
         Listings.push(newListing);
-        // event
+        emit CreatListing(
+            newListing.id,
+            creator,
+            _tokenContract,
+            _tokenId,
+            _quantity,
+            _isAuction
+        );
     }
 
     //not ended
@@ -149,23 +172,25 @@ contract marketplace is ERC1155Holder, ERC721Holder {
         uint256 _price,
         uint256 _durationUntilEnd,
         uint256 _quantity
-    ) external onlyCreator(_listingId) mustNotDeleted(_listingId) {
+    )
+        external
+        onlyCreator(_listingId)
+        mustNotDeleted(_listingId)
+        notEnded(_listingId)
+    {
         require(_price != 0, "");
         require(_durationUntilEnd != 0, "");
         require(_quantity != 0, "");
         Listing memory target = Listings[_listingId];
-        address creator = target.creator;
-        bool isAuction = target.isAuction;
-        TokenType tokenType = target.tokenType;
-        if (tokenType == TokenType.ERC721) {
+        if (target.tokenType == TokenType.ERC721) {
             _quantity = 1;
         }
         Listing memory newListing = Listing(
             _listingId,
             target.tokenContract,
             target.tokenId,
-            tokenType,
-            creator,
+            target.tokenType,
+            target.creator,
             _paymentToken,
             _price,
             target.start,
@@ -174,71 +199,77 @@ contract marketplace is ERC1155Holder, ERC721Holder {
             target.isAuction,
             false,
             address(0),
-            target.minBid,
             false
         );
-        if (isAuction && tokenType == TokenType.ERC1155) {
-            IERC1155(target.tokenContract).safeTransferFrom(
-                address(this),
-                creator,
-                target.tokenId,
-                target.quantity,
-                ""
-            );
-            validateToken(
-                target.tokenContract,
-                target.tokenId,
-                creator,
-                _quantity,
-                target.tokenType
-            );
-            IERC1155(target.tokenContract).safeTransferFrom(
-                creator,
-                address(this),
-                target.tokenId,
-                _quantity,
-                ""
-            );
-        }
         Listings[_listingId] = newListing;
-        // event
+        transferToken(
+            target.tokenContract,
+            address(this),
+            target.creator,
+            target.tokenId,
+            target.quantity,
+            target.tokenType
+        );
+        validateToken(
+            target.tokenContract,
+            target.tokenId,
+            target.creator,
+            _quantity,
+            target.tokenType
+        );
+        transferToken(
+            target.tokenContract,
+            target.creator,
+            address(this),
+            target.tokenId,
+            _quantity,
+            target.tokenType
+        );
+        emit EditListing(
+            _listingId,
+            target.creator,
+            target.tokenContract,
+            target.tokenId,
+            target.quantity
+        );
     }
 
-    //not ended
-    function cancelListing(
-        uint256 _listingId
-    ) external onlyCreator(_listingId) mustNotDeleted(_listingId) {
-        Listing memory target = Listings[_listingId];
-        target.deleted = true;
-        if (target.isAuction) {
-            if (target.tokenType == TokenType.ERC1155) {
-                IERC1155(target.tokenContract).safeTransferFrom(
-                    address(this),
-                    target.creator,
-                    target.tokenId,
-                    target.quantity,
-                    ""
-                );
-            } else {
-                IERC721(target.tokenContract).safeTransferFrom(
-                    address(this),
-                    target.creator,
-                    target.tokenId
-                );
-            }
-            Listings[_listingId] = target;
-            // event
-        } else {
-            Listings[_listingId] = target;
-            // event
-        }
-    }
+    // //not ended
+    // function cancelListing(uint256 _listingId)
+    //     external
+    //     onlyCreator(_listingId)
+    //     mustNotDeleted(_listingId)
+    //     notEnded(_listingId)
+    // {
+    //     Listing memory target = Listings[_listingId];
+    //     target.deleted = true;
+    //     if (target.isAuction) {
+    //         if (target.tokenType == TokenType.ERC1155) {
+    //             IERC1155(target.tokenContract).safeTransferFrom(
+    //                 address(this),
+    //                 target.creator,
+    //                 target.tokenId,
+    //                 target.quantity,
+    //                 ""
+    //             );
+    //         } else {
+    //             IERC721(target.tokenContract).safeTransferFrom(
+    //                 address(this),
+    //                 target.creator,
+    //                 target.tokenId
+    //             );
+    //         }
+    //     }
+    //     Listings[_listingId] = target;
+    //     // event
+    // }
 
     //not ended
-    function buy(
-        uint256 _listingId,
-        uint256 _quantity
-    ) external mustNotDeleted(_listingId) {
+    function buy(uint256 _listingId, uint256 _quantity)
+        external
+        mustNotDeleted(_listingId)
+        notEnded(_listingId)
+    {
         Listing memory target = Listings[_listingId];
         uint256 totalPrice = target.price * _quantity;
         target.quantity -= _quantity;
@@ -284,43 +315,28 @@ contract marketplace is ERC1155Holder, ERC721Holder {
             target.creator,
             totalPrice
         );
-        if (target.tokenType == TokenType.ERC1155) {
-            IERC1155(target.tokenContract).safeTransferFrom(
-                target.creator,
-                msg.sender,
-                target.tokenId,
-                _quantity,
-                ""
-            );
-        } else if (target.tokenType == TokenType.ERC721) {
-            IERC721(target.tokenContract).safeTransferFrom(
-                target.creator,
-                msg.sender,
-                target.tokenId
-            );
-        }
+        transferToken(
+            target.tokenContract,
+            target.creator,
+            msg.sender,
+            target.tokenId,
+            _quantity,
+            target.tokenType
+        );
         // event
     }
 
-    function bid(
-        uint256 _listingId,
-        address _bidder,
-        uint256 _bidPrice,
-        uint256 _quantity
-    ) external {
-        require(_bidder != address(0), "");
+    function bid(uint256 _listingId, uint256 _bidPrice) external {
+        require(msg.sender != address(0), "");
         require(_bidPrice != 0, "");
-        require(_quantity != 0, "");
         Listing memory target = Listings[_listingId];
-        Bid memory newBid = Bid(_listingId, _bidder, _bidPrice, _quantity);
+        Bid memory newBid = Bid(_listingId, msg.sender, _bidPrice);
         Bid[] memory bidsOfListing = bids[_listingId];
         Bid memory currentHighestBid = bidsOfListing[bidsOfListing.length];
-        uint256 newBidPrice = newBid.bid * newBid.quantity;
-        uint256 currentBidPrice = currentHighestBid.bid *
-            currentHighestBid.quantity;
+        uint256 newBidPrice = newBid.bid;
+        uint256 currentBidPrice = currentHighestBid.bid;
         if (bidsOfListing.length > 0) {
             require(
-                // include quantitiy
                 (newBidPrice > currentBidPrice &&
                     ((newBidPrice - currentBidPrice) * MAX_BPS) /
                         currentBidPrice >=
@@ -328,27 +344,138 @@ contract marketplace is ERC1155Holder, ERC721Holder {
                 ""
             );
         } else {
-            require(newBidPrice >= target.minBid);
+            require(newBidPrice >= target.price);
         }
         bids[_listingId].push(newBid);
+        target.highestBidder = msg.sender;
+        Listings[_listingId] = target;
         IERC20(target.paymentToken).safeTransferFrom(
             msg.sender,
             address(this),
-            newBidPrice
+            newBidPrice * target.quantity
         );
         // event
     }
 
-    function getListing(
-        uint256 listingId
-    ) external view returns (Listing memory) {
+    function closeAuction(uint256 _listingId) external {
+        Listing memory target = Listings[_listingId];
+        require(target.isAuction, "");
+        require(!target.ended, "");
+        require(block.timestamp > target.end, "");
+        target.ended = true;
+        Listings[_listingId] = target;
+        Bid[] memory listingBids = bids[_listingId];
+        Bid memory highestBid = listingBids[listingBids.length];
+        require(highestBid.bidder != address(0), "");
+        uint256 totalPrice = highestBid.bid * target.quantity;
+        // highestBid.bidder == target.highestBidder
+        uint256 platformFeeCut = (totalPrice * PLATFORM_FEE) / MAX_BPS;
+        uint256 royaltyCut;
+        address royaltyRecipient;
+        try
+            IERC2981(target.tokenContract).royaltyInfo(
+                target.tokenId,
+                totalPrice
+            )
+        returns (address royaltyFeeRecipient, uint256 royaltyFeeAmount) {
+            if (royaltyFeeRecipient != address(0) && royaltyFeeAmount > 0) {
+                require(
+                    royaltyFeeAmount + platformFeeCut <= totalPrice,
+                    "fees exceed the price"
+                );
+                royaltyRecipient = royaltyFeeRecipient;
+                royaltyCut = royaltyFeeAmount;
+            }
+        } catch {}
+        IERC20(target.paymentToken).safeTransferFrom(
+            msg.sender,
+            PLATFORM_OWNER,
+            platformFeeCut
+        );
+        if (royaltyCut != 0 && royaltyRecipient != address(0)) {
+            IERC20(target.paymentToken).safeTransferFrom(
+                msg.sender,
+                royaltyRecipient,
+                royaltyCut
+            );
+        }
+        IERC20(target.paymentToken).safeTransferFrom(
+            msg.sender,
+            target.creator,
+            totalPrice
+        );
+        if (target.tokenType == TokenType.ERC721) {
+            IERC721(target.tokenContract).safeTransferFrom(
+                address(this),
+                target.highestBidder,
+                target.tokenId
+            );
+        } else {
+            IERC1155(target.tokenContract).safeTransferFrom(
+                address(this),
+                target.highestBidder,
+                target.tokenId,
+                target.quantity,
+                ""
+            );
+        }
+        // event
+    }
+
+    function transferToken(
+        address _tokenContract,
+        address _from,
+        address _to,
+        uint256 _tokenId,
+        uint256 _quantity,
+        TokenType _tokenType
+    ) internal {
+        if (_tokenType == TokenType.ERC721) {
+            IERC721(_tokenContract).safeTransferFrom(_from, _to, _tokenId);
+        } else {
+            IERC1155(_tokenContract).safeTransferFrom(
+                _from,
+                _to,
+                _tokenId,
+                _quantity,
+                ""
+            );
+        }
+    }
+
+    function getRoyalty(
+        address _tokenContract,
+        uint256 _tokenId,
+        uint256 _totalPrice,
+        uint256 _platformFeeCut
+    ) internal view returns (address royaltyRecipient, uint256 royaltyCut) {
+        try
+            IERC2981(_tokenContract).royaltyInfo(_tokenId, _totalPrice)
+        returns (address royaltyFeeRecipient, uint256 royaltyFeeAmount) {
+            if (royaltyFeeRecipient != address(0) && royaltyFeeAmount > 0) {
+                require(
+                    royaltyFeeAmount + _platformFeeCut <= _totalPrice,
+                    "fees exceed the price"
+                );
+                return (royaltyFeeRecipient, royaltyFeeAmount);
+            }
+        } catch {}
+    }
+
+    function getListing(uint256 listingId)
+        external
+        view
+        returns (Listing memory)
+    {
         return (Listings[listingId]);
     }
 
     /// @dev Returns the interface supported by a contract.
-    function getTokenType(
-        address _assetContract
-    ) internal view returns (TokenType tokenType) {
+    function getTokenType(address _assetContract)
+        internal
+        view
+        returns (TokenType tokenType)
+    {
         if (
             IERC165(_assetContract).supportsInterface(
                 type(IERC1155).interfaceId
