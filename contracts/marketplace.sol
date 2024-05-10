@@ -181,10 +181,10 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
     }
 
     constructor(
-        uint256 _maxBps,
         uint256 _bidBufferBps,
+        uint256 timeBuffer,
         uint256 _platformFee,
-        uint256 timeBuffer
+        uint256 _maxBps
     ) {
         PLATFORM_OWNER = msg.sender;
         PLATFORM_FEE = _platformFee;
@@ -300,29 +300,31 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
             false
         );
         listings[_listingId] = newListing;
-        transferToken(
-            targetListing.tokenContract,
-            address(this),
-            targetListing.creator,
-            targetListing.tokenId,
-            targetListing.quantity,
-            targetListing.tokenType
-        );
-        validateToken(
-            targetListing.tokenContract,
-            targetListing.tokenId,
-            targetListing.creator,
-            _quantity,
-            targetListing.tokenType
-        );
-        transferToken(
-            targetListing.tokenContract,
-            targetListing.creator,
-            address(this),
-            targetListing.tokenId,
-            _quantity,
-            targetListing.tokenType
-        );
+        if (targetListing.isAuction) {
+            transferToken(
+                targetListing.tokenContract,
+                address(this),
+                targetListing.creator,
+                targetListing.tokenId,
+                targetListing.quantity,
+                targetListing.tokenType
+            );
+            validateToken(
+                targetListing.tokenContract,
+                targetListing.tokenId,
+                targetListing.creator,
+                _quantity,
+                targetListing.tokenType
+            );
+            transferToken(
+                targetListing.tokenContract,
+                targetListing.creator,
+                address(this),
+                targetListing.tokenId,
+                _quantity,
+                targetListing.tokenType
+            );
+        }
         emit EditListingLog(
             _listingId,
             targetListing.creator,

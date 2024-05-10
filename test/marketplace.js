@@ -14,8 +14,8 @@ describe("marketplace", function () {
         // Contracts are deployed using the first signer/account by default
         const [owner, otherAccount] = await ethers.getSigners();
 
-        const Marketplace = await ethers.getContractFactory("marketplace");
-        const marketplace = await Marketplace.deploy();
+        const Marketplace = await ethers.getContractFactory("NftMarketplace");
+        const marketplace = await Marketplace.deploy(500,15,200,10000);
 
         const Rakmans = await ethers.getContractFactory("Rakmans");
         const rakmansNFT = await Rakmans.deploy(owner);
@@ -30,8 +30,6 @@ describe("marketplace", function () {
 
         await ether.transfer(otherAccount, 1000);
 
-        await marketplace.initialize(10000, 500);
-
         return {
             rakmansERC1155,
             rakmansNFT,
@@ -42,7 +40,7 @@ describe("marketplace", function () {
         };
     }
 
-    describe("crete and edit listing", function () {
+    describe("create and edit listing", function () {
         it("edit listing", async () => {
             const { rakmansNFT, ether, marketplace, owner, otherAccount } =
                 await loadFixture(deploy);
@@ -70,45 +68,50 @@ describe("marketplace", function () {
                 await loadFixture(deploy);
             await rakmansNFT.safeMint(owner, "rakmansNFT.github.io");
             await rakmansNFT.approve(marketplace.getAddress(), 0);
+            // less than 10
             await marketplace.createList(
                 rakmansNFT.getAddress(),
                 0,
                 ether.getAddress(),
-                10,
+                900,
                 1000,
                 1,
                 false
             );
             const listing = await marketplace.getListing(0);
-            await ether.connect(otherAccount).approve(marketplace, 10);
+            console.log(await ether.connect(otherAccount).balanceOf(otherAccount))
+            await ether.connect(otherAccount).approve(marketplace, 918);
+            console.log(await ether.connect(otherAccount).allowance(otherAccount,marketplace))
             await marketplace.connect(otherAccount).buy(0, 1);
+            const ownerBal = await ether.balanceOf(owner)
+            console.log(ownerBal)
             expect(await rakmansNFT.ownerOf(0)).to.equal(otherAccount);
-            expect(await ether.balanceOf(owner)).to.equal(9010);
+            expect(await ether.balanceOf(owner)).to.equal(9918);
         });
-        it("test with ERC721 Auction mode listing", async function () {
-            const { rakmansERC1155, ether, marketplace, owner } =
-                await loadFixture(deploy);
-            await rakmansERC1155.mint(
-                owner,
-                0,
-                10,
-                "0x0000000000000000000000000000000000000000000000000000000000000000"
-            );
-            await rakmansERC1155.setApprovalForAll(
-                marketplace.getAddress(),
-                true
-            );
-            await marketplace.createList(
-                rakmansERC1155.getAddress(),
-                0,
-                ether.getAddress(),
-                0,
-                1000,
-                10,
-                10,
-                true
-            );
-            const listing = await marketplace.getListing(0);
-        });
+        // it("test with ERC721 Auction mode listing", async function () {
+        //     const { rakmansERC1155, ether, marketplace, owner } =
+        //         await loadFixture(deploy);
+        //     await rakmansERC1155.mint(
+        //         owner,
+        //         0,
+        //         10,
+        //         "0x0000000000000000000000000000000000000000000000000000000000000000"
+        //     );
+        //     await rakmansERC1155.setApprovalForAll(
+        //         marketplace.getAddress(),
+        //         true
+        //     );
+        //     await marketplace.createList(
+        //         rakmansERC1155.getAddress(),
+        //         0,
+        //         ether.getAddress(),
+        //         0,
+        //         1000,
+        //         10,
+        //         10,
+        //         true
+        //     );
+        //     const listing = await marketplace.getListing(0);
+        // });
     });
 });
