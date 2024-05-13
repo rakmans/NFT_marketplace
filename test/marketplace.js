@@ -12,10 +12,11 @@ describe("marketplace", function () {
     // and reset Hardhat Network to that snapshot in every test.
     async function deploy() {
         // Contracts are deployed using the first signer/account by default
-        const [owner, otherAccount] = await ethers.getSigners();
+        const [owner, otherAccount, a1, a2, a3, a4, a5] =
+            await ethers.getSigners();
 
         const Marketplace = await ethers.getContractFactory("NftMarketplace");
-        const marketplace = await Marketplace.deploy(500,15,200,10000);
+        const marketplace = await Marketplace.deploy(500, 15, 200, 10000);
 
         const Rakmans = await ethers.getContractFactory("Rakmans");
         const rakmansNFT = await Rakmans.deploy(owner);
@@ -37,6 +38,11 @@ describe("marketplace", function () {
             ether,
             owner,
             otherAccount,
+            a1,
+            a2,
+            a3,
+            a4,
+            a5,
         };
     }
 
@@ -66,28 +72,75 @@ describe("marketplace", function () {
         it("test with ERC721 sale mode listing", async function () {
             const { rakmansNFT, ether, marketplace, owner, otherAccount } =
                 await loadFixture(deploy);
+            await rakmansNFT.safeMint(otherAccount, "rakmansNFT.github.io");
+            await rakmansNFT
+                .connect(otherAccount)
+                .approve(marketplace.getAddress(), 0);
+            // less than 10 (decimals)
+            await marketplace
+                .connect(otherAccount)
+                .createList(
+                    rakmansNFT.getAddress(),
+                    0,
+                    ether.getAddress(),
+                    900,
+                    1000,
+                    1,
+                    false
+                );
+            const listing = await marketplace.getListing(0);
+            await ether.approve(marketplace, 900);
+            await marketplace.buy(0, 1);
+            expect(await rakmansNFT.ownerOf(0)).to.equal(owner);
+            expect(await ether.balanceOf(otherAccount)).to.equal(1837);
+            expect(await ether.balanceOf(owner)).to.equal(8163);
+        });
+        it("test with ERC721 Auction mode listing", async function () {
+            const {
+                rakmansNFT,
+                ether,
+                marketplace,
+                owner,
+                a1,
+                a2,
+                a3,
+                a4,
+                a5,
+            } = await loadFixture(deploy);
+            await ether.transfer(a1, 1000);
+            await ether.transfer(a2, 1000);
+            await ether.transfer(a3, 1000);
+            await ether.transfer(a4, 1000);
+            await ether.transfer(a5, 1000);
             await rakmansNFT.safeMint(owner, "rakmansNFT.github.io");
             await rakmansNFT.approve(marketplace.getAddress(), 0);
-            // less than 10
             await marketplace.createList(
                 rakmansNFT.getAddress(),
                 0,
                 ether.getAddress(),
-                900,
+                200,
                 1000,
                 1,
-                false
+                true
             );
             const listing = await marketplace.getListing(0);
-            console.log(await ether.connect(otherAccount).balanceOf(otherAccount))
-            await ether.connect(otherAccount).approve(marketplace, 918);
-            console.log(await ether.connect(otherAccount).allowance(otherAccount,marketplace))
-            await marketplace.connect(otherAccount).buy(0, 1);
-            const ownerBal = await ether.balanceOf(owner)
-            console.log(ownerBal)
-            expect(await rakmansNFT.ownerOf(0)).to.equal(otherAccount);
-            expect(await ether.balanceOf(owner)).to.equal(9918);
+            await ether.connect(a1).approve(marketplace.getAddress(),220)
+            await marketplace.connect(a1).bid(0, 205);
+            await ether.connect(a2).approve(marketplace.getAddress(),250)
+            // expect(await marketplace.connect(a2).bid(0, 210)).to.be.reverted;
+            // expect(await marketplace.connect(a2).bid(0, 205)).to.be.reverted;
+            await marketplace.connect(a2).bid(0, 250);
+            await ether.connect(a3).approve(marketplace.getAddress(),350)
+            await marketplace.connect(a3).bid(0, 350);
+            await ether.connect(a4).approve(marketplace.getAddress(),420)
+            await marketplace.connect(a4).bid(0, 420);
+            await ether.connect(a5).approve(marketplace.getAddress(),500)
+            await marketplace.connect(a5).bid(0, 500);
+            await ether.connect(a4).approve(marketplace.getAddress(),480)
+            await marketplace.connect(a4).bid(0, 480);
+            console.log(await marketplace.getListingBids(0))
         });
+
         // it("test with ERC721 Auction mode listing", async function () {
         //     const { rakmansERC1155, ether, marketplace, owner } =
         //         await loadFixture(deploy);
