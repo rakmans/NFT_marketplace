@@ -147,10 +147,19 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
         address indexed bidder,
         uint256 bid
     );
+    /**
+     * @dev Event emitted when the user withdraws her money
+     */
+    event Withdrawn(
+        uint256 indexed listingId,
+        address indexed harvester,
+        uint256 value
+    );
 
     error onlyCreatorCanCall();
     error listingDeleted();
     error listingEnded();
+
     /**
      * @dev Error thrown when only the creator can call a function
      */
@@ -384,28 +393,7 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
             totalPrice,
             platformFeeCut
         );
-        checkBalanceAndAllowance(
-            msg.sender,
-            targetListing.paymentToken,
-            totalPrice
-        );
-        IERC20(targetListing.paymentToken).safeTransferFrom(
-            msg.sender,
-            PLATFORM_OWNER,
-            platformFeeCut
-        );
-        if (royaltyCut != 0 && royaltyRecipient != address(0)) {
-            IERC20(targetListing.paymentToken).safeTransferFrom(
-                msg.sender,
-                royaltyRecipient,
-                royaltyCut
-            );
-        }
-        IERC20(targetListing.paymentToken).safeTransferFrom(
-            msg.sender,
-            targetListing.creator,
-            totalPrice - (platformFeeCut + royaltyCut)
-        );
+        payout(msg.sender,targetListing.creator,totalPrice,platformFeeCut,royaltyCut,royaltyRecipient,targetListing.paymentToken);
         transferToken(
             targetListing.tokenContract,
             targetListing.creator,
@@ -426,6 +414,7 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
         require(msg.sender != address(0), "");
         require(_bidPrice != 0, "");
         Listing memory targetListing = listings[_listingId];
+        require(block.timestamp < targetListing.end, "");
         uint256 lastBid = bidsMap[_listingId][msg.sender];
         Bid memory newBid = Bid(msg.sender, _bidPrice + lastBid);
         Bid[] memory bidsOfListing = bids[_listingId];
@@ -448,7 +437,9 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
         bids[_listingId].push(newBid);
         bidsMap[_listingId][msg.sender] = _bidPrice + lastBid;
         targetListing.highestBidder = msg.sender;
-        targetListing.end = targetListing.end + 15 minutes;
+        if (targetListing.end - block.timestamp <= TIME_BUFFER) {
+            targetListing.end += TIME_BUFFER;
+        }
         listings[_listingId] = targetListing;
         checkBalanceAndAllowance(
             msg.sender,
@@ -515,28 +506,7 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
             totalPrice,
             platformFeeCut
         );
-        checkBalanceAndAllowance(
-            msg.sender,
-            targetListing.paymentToken,
-            totalPrice + platformFeeCut + royaltyCut
-        );
-        IERC20(targetListing.paymentToken).safeTransferFrom(
-            msg.sender,
-            PLATFORM_OWNER,
-            platformFeeCut
-        );
-        if (royaltyCut != 0 && royaltyRecipient != address(0)) {
-            IERC20(targetListing.paymentToken).safeTransferFrom(
-                msg.sender,
-                royaltyRecipient,
-                royaltyCut
-            );
-        }
-        IERC20(targetListing.paymentToken).safeTransferFrom(
-            msg.sender,
-            targetListing.creator,
-            totalPrice
-        );
+        payout(msg.sender,targetListing.creator,totalPrice,platformFeeCut,royaltyCut,royaltyRecipient,targetListing.paymentToken);
         transferToken(
             targetListing.tokenContract,
             targetListing.creator,
@@ -562,10 +532,11 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
         require(targetListing.isAuction, "");
         require(!targetListing.ended, "");
         require(block.timestamp > targetListing.end, "");
+        bidsMap[_listingId][targetListing.highestBidder] = 0;
         targetListing.ended = true;
         listings[_listingId] = targetListing;
         Bid[] memory listingBids = bids[_listingId];
-        Bid memory highestBid = listingBids[listingBids.length];
+        Bid memory highestBid = listingBids[listingBids.length - 1];
         require(highestBid.bidder != address(0), "");
         uint256 totalPrice = highestBid.bid * targetListing.quantity;
         uint256 platformFeeCut = (totalPrice * PLATFORM_FEE) / MAX_BPS;
@@ -575,22 +546,14 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
             totalPrice,
             platformFeeCut
         );
-        IERC20(targetListing.paymentToken).safeTransferFrom(
-            msg.sender,
-            PLATFORM_OWNER,
-            platformFeeCut
-        );
-        if (royaltyCut != 0 && royaltyRecipient != address(0)) {
-            IERC20(targetListing.paymentToken).safeTransferFrom(
-                msg.sender,
-                royaltyRecipient,
-                royaltyCut
-            );
-        }
-        IERC20(targetListing.paymentToken).safeTransferFrom(
-            msg.sender,
+        payout(
+            address(this),
             targetListing.creator,
-            totalPrice
+            totalPrice,
+            platformFeeCut,
+            royaltyCut,
+            royaltyRecipient,
+            targetListing.paymentToken
         );
         transferToken(
             targetListing.tokenContract,
@@ -601,6 +564,23 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
             targetListing.tokenType
         );
         emit CloseAuctionLog(_listingId);
+    }
+
+    /**
+     * @dev Withdraws the user's bid from a listing.
+     * @param _listingId The ID of the listing.
+     */
+    function withdrawal(uint256 _listingId) external {
+        require(listings[_listingId].ended, "");
+        require(listings[_listingId].isAuction, "");
+        uint256 userBal = bidsMap[_listingId][msg.sender];
+        require(userBal > 0, "");
+        bidsMap[_listingId][msg.sender] = 0;
+        IERC20(listings[_listingId].paymentToken).safeTransfer(
+            msg.sender,
+            userBal
+        );
+        emit Withdrawn(_listingId, msg.sender, userBal);
     }
 
     /**
@@ -630,6 +610,46 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
                 _quantity,
                 ""
             );
+        }
+    }
+
+    function payout(
+        address from,
+        address to,
+        uint256 amount,
+        uint256 platformFeeCut,
+        uint256 royaltyCut,
+        address royaltyRecipient,
+        address paymentToken
+    ) internal {
+        if (from == address(this)) {
+            IERC20(paymentToken).safeTransfer(PLATFORM_OWNER, platformFeeCut);
+            if (royaltyCut != 0 && royaltyRecipient != address(0)) {
+                IERC20(paymentToken).safeTransfer(royaltyRecipient, royaltyCut);
+            }
+            IERC20(paymentToken).safeTransfer(
+                to,
+                amount - (platformFeeCut + royaltyCut)
+            );
+        } else {
+            checkBalanceAndAllowance(
+                msg.sender,
+                paymentToken,
+                amount
+            );
+            IERC20(paymentToken).safeTransferFrom(
+                msg.sender,
+                PLATFORM_OWNER,
+                platformFeeCut
+            );
+            if (royaltyCut != 0 && royaltyRecipient != address(0)) {
+                IERC20(paymentToken).safeTransferFrom(
+                    msg.sender,
+                    royaltyRecipient,
+                    royaltyCut
+                );
+            }
+            IERC20(paymentToken).safeTransferFrom(msg.sender, to, amount - (platformFeeCut + royaltyCut));
         }
     }
 
@@ -668,9 +688,16 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
     }
 
     function getListingBids(
-        uint256 listingId
+        uint256 _listingId
     ) external view returns (Bid[] memory) {
-        return (bids[listingId]);
+        return (bids[_listingId]);
+    }
+
+    function getUserBidBalance(
+        uint256 _listingId,
+        address _userAddress
+    ) external view returns (uint256) {
+        return (bidsMap[_listingId][_userAddress]);
     }
 
     /**

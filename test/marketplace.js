@@ -123,22 +123,48 @@ describe("marketplace", function () {
                 1,
                 true
             );
-            const listing = await marketplace.getListing(0);
-            await ether.connect(a1).approve(marketplace.getAddress(),220)
+            await ether.connect(a1).approve(marketplace.getAddress(), 220);
             await marketplace.connect(a1).bid(0, 205);
-            await ether.connect(a2).approve(marketplace.getAddress(),250)
-            // expect(await marketplace.connect(a2).bid(0, 210)).to.be.reverted;
-            // expect(await marketplace.connect(a2).bid(0, 205)).to.be.reverted;
+            await ether.connect(a2).approve(marketplace.getAddress(), 250);
+            await expect(marketplace.connect(a2).bid(0, 210)).to.be.reverted;
+            await expect(marketplace.connect(a2).bid(0, 205)).to.be.reverted;
             await marketplace.connect(a2).bid(0, 250);
-            await ether.connect(a3).approve(marketplace.getAddress(),350)
+            await ether.connect(a3).approve(marketplace.getAddress(), 350);
             await marketplace.connect(a3).bid(0, 350);
-            await ether.connect(a4).approve(marketplace.getAddress(),420)
+            await ether.connect(a4).approve(marketplace.getAddress(), 420);
             await marketplace.connect(a4).bid(0, 420);
-            await ether.connect(a5).approve(marketplace.getAddress(),500)
+            await ether.connect(a5).approve(marketplace.getAddress(), 500);
             await marketplace.connect(a5).bid(0, 500);
-            await ether.connect(a4).approve(marketplace.getAddress(),480)
+            await ether.connect(a4).approve(marketplace.getAddress(), 480);
             await marketplace.connect(a4).bid(0, 480);
-            console.log(await marketplace.getListingBids(0))
+            await expect(marketplace.closeAuction(0)).to.be.reverted;
+            await time.increase(1000);
+            await ether.connect(a3).approve(marketplace.getAddress(), 350);
+            await expect(marketplace.connect(a3).bid(0, 350)).to.be.reverted;
+            const listingBids = await marketplace.getListingBids(0);
+            const highestBidder = listingBids[listingBids.length - 1][0];
+            expect(highestBidder).to.be.equal(a4);
+            const beforeOwnerBal = await ether.balanceOf(owner);
+            await marketplace.connect(a4).closeAuction(0);
+            const ownerBal = await ether.balanceOf(owner);
+            expect(ownerBal).to.be.equal(beforeOwnerBal + 900n);
+            const withdrawMony = async (a) => {
+                const beforeBal = await ether.balanceOf(a);
+                const bidsAmount = await marketplace.getUserBidBalance(0, a);
+                await marketplace.connect(a).withdrawal(0);
+                expect(await marketplace.getUserBidBalance(0, a)).to.be.equal(
+                    0
+                );
+                expect(await ether.balanceOf(a)).to.be.equal(
+                    beforeBal + bidsAmount
+                );
+            };
+            await withdrawMony(a1);
+            await withdrawMony(a2);
+            await withdrawMony(a3);
+            await expect(withdrawMony(a4)).to.be.reverted;
+            await withdrawMony(a5);
+            expect(await rakmansNFT.ownerOf(0)).to.be.equal(highestBidder)
         });
 
         // it("test with ERC721 Auction mode listing", async function () {
