@@ -6,6 +6,8 @@ const { anyValue } = require("@nomicfoundation/hardhat-chai-matchers/withArgs");
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
+// decimals
+
 describe("marketplace", function () {
     // We define a fixture to reuse the same setup in every test.
     // We use loadFixture to run this setup once, snapshot that state,
@@ -164,7 +166,82 @@ describe("marketplace", function () {
             await withdrawMony(a3);
             await expect(withdrawMony(a4)).to.be.reverted;
             await withdrawMony(a5);
-            expect(await rakmansNFT.ownerOf(0)).to.be.equal(highestBidder)
+            expect(await rakmansNFT.ownerOf(0)).to.be.equal(highestBidder);
+        });
+        it("test with ERC721 Offer mode listing", async () => {
+            const {
+                rakmansNFT,
+                ether,
+                marketplace,
+                owner,
+                a1,
+                a2,
+                a3,
+                a4,
+                a5,
+            } = await loadFixture(deploy);
+            await ether.transfer(a1, 1000);
+            await ether.transfer(a2, 1000);
+            await ether.transfer(a3, 1000);
+            await ether.transfer(a4, 1000);
+            await ether.transfer(a5, 1000);
+            await rakmansNFT.safeMint(owner, "rakmansNFT.github.io");
+            await rakmansNFT.approve(marketplace.getAddress(), 0);
+            await marketplace.createList(
+                rakmansNFT.getAddress(),
+                0,
+                ether.getAddress(),
+                200,
+                1000,
+                1,
+                false
+            );
+
+            await ether.connect(a1).approve(marketplace.getAddress(), 160);
+            await expect(marketplace.connect(a1).bid(0, 205)).to.be.reverted;
+            await expect(marketplace.connect(a1).offer(0, 200,10)).to.be.reverted;
+            await expect(marketplace.connect(a1).offer(0, 205,10)).to.be.reverted;
+            await marketplace.connect(a1).offer(0, 160,10);
+
+            // await ether.connect(a2).approve(marketplace.getAddress(), 170);
+            // await expect(marketplace.connect(a2).offer(0, 160,1)).to.be.reverted;
+            // await expect(marketplace.connect(a2).offer(0, 162,1)).to.be.reverted;
+            // await marketplace.connect(a2).offer(0, 170,1);
+
+            // await ether.connect(a3).approve(marketplace.getAddress(), 180);
+            // await marketplace.connect(a3).offer(0, 180,1);
+
+            // await ether.connect(a1).approve(marketplace.getAddress(), 30);
+            // await marketplace.connect(a1).offer(0, 30,1);
+
+            // await time.increase(1500);
+            // await ether.connect(a3).approve(marketplace.getAddress(), 350);
+            // await expect(marketplace.connect(a3).offer(0, 100)).to.be.reverted;
+            // const listingOffers = await marketplace.getListingOffers(0);
+            // console.log(listingOffers)
+            // const highestBidder = listingBids[listingBids.length - 1][0];
+            // expect(highestBidder).to.be.equal(a4);
+            // const beforeOwnerBal = await ether.balanceOf(owner);
+            // await marketplace.connect(a4).closeAuction(0);
+            // const ownerBal = await ether.balanceOf(owner);
+            // expect(ownerBal).to.be.equal(beforeOwnerBal + 900n);
+            // const withdrawMony = async (a) => {
+            //     const beforeBal = await ether.balanceOf(a);
+            //     const bidsAmount = await marketplace.getUserBidBalance(0, a);
+            //     await marketplace.connect(a).withdrawal(0);
+            //     expect(await marketplace.getUserBidBalance(0, a)).to.be.equal(
+            //         0
+            //     );
+            //     expect(await ether.balanceOf(a)).to.be.equal(
+            //         beforeBal + bidsAmount
+            //     );
+            // };
+            // await withdrawMony(a1);
+            // await withdrawMony(a2);
+            // await withdrawMony(a3);
+            // await expect(withdrawMony(a4)).to.be.reverted;
+            // await withdrawMony(a5);
+            // expect(await rakmansNFT.ownerOf(0)).to.be.equal(highestBidder);
         });
 
         // it("test with ERC721 Auction mode listing", async function () {

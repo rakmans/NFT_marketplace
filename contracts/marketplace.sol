@@ -99,6 +99,7 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
      * @dev Mapping of listing ID to offers
      */
     mapping(uint256 => Offer[]) public offers;
+    mapping(uint256 => mapping(address => uint256)) public offersMap;
 
     /**
      * @dev Array of listings
@@ -393,7 +394,15 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
             totalPrice,
             platformFeeCut
         );
-        payout(msg.sender,targetListing.creator,totalPrice,platformFeeCut,royaltyCut,royaltyRecipient,targetListing.paymentToken);
+        payout(
+            msg.sender,
+            targetListing.creator,
+            totalPrice,
+            platformFeeCut,
+            royaltyCut,
+            royaltyRecipient,
+            targetListing.paymentToken
+        );
         transferToken(
             targetListing.tokenContract,
             targetListing.creator,
@@ -466,21 +475,47 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
         uint256 _quantity
     ) external {
         Listing memory targetListing = listings[_listingId];
+        require(block.timestamp < targetListing.end, "");
         require(!targetListing.isAuction, "");
-        Offer[] memory listingOffers = offers[_listingId];
-        if (listingOffers.length > 0) {
-            Offer memory lastOffer = listingOffers[listingOffers.length - 1];
-            require(_price > lastOffer.price, "");
-        } else {
-            require(_price < targetListing.price, "");
+        require(_price < targetListing.price, "");
+        if (targetListing.tokenType == TokenType.ERC721) {
+            _quantity = 1;
         }
+        checkBalanceAndAllowance(
+            msg.sender,
+            targetListing.paymentToken,
+            _price * _quantity
+        );
+        Offer[] memory offersOfListing = offers[_listingId];
+        uint256 lastOffer = offersMap[_listingId][msg.sender];
         Offer memory newOffer = Offer(
-            listingOffers.length,
+            offersOfListing.length,
             msg.sender,
             _listingId,
             _price,
             _quantity
         );
+        uint256 newOfferPrice = newOffer.price;
+        if (offersOfListing.length > 0) {
+            Offer memory currentOffer = offersOfListing[
+                offersOfListing.length - 1
+            ];
+            uint256 currentOfferPrice = currentOffer.price;
+            require(
+                (newOfferPrice + lastOffer < currentOfferPrice &&
+                    ((currentOfferPrice - (newOfferPrice + lastOffer)) *
+                        MAX_BPS) /
+                        currentOfferPrice >=
+                    BID_BUFFER_BPS),
+                ""
+            );
+        } else {
+            require(newOfferPrice >= targetListing.price, "");
+        }
+        if (targetListing.end - block.timestamp <= TIME_BUFFER) {
+            targetListing.end += TIME_BUFFER;
+        }
+        offersMap[_listingId][msg.sender] = newOfferPrice;
         offers[_listingId].push(newOffer);
     }
 
@@ -506,7 +541,15 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
             totalPrice,
             platformFeeCut
         );
-        payout(msg.sender,targetListing.creator,totalPrice,platformFeeCut,royaltyCut,royaltyRecipient,targetListing.paymentToken);
+        payout(
+            msg.sender,
+            targetListing.creator,
+            totalPrice,
+            platformFeeCut,
+            royaltyCut,
+            royaltyRecipient,
+            targetListing.paymentToken
+        );
         transferToken(
             targetListing.tokenContract,
             targetListing.creator,
@@ -632,11 +675,7 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
                 amount - (platformFeeCut + royaltyCut)
             );
         } else {
-            checkBalanceAndAllowance(
-                msg.sender,
-                paymentToken,
-                amount
-            );
+            checkBalanceAndAllowance(msg.sender, paymentToken, amount);
             IERC20(paymentToken).safeTransferFrom(
                 msg.sender,
                 PLATFORM_OWNER,
@@ -649,7 +688,11 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
                     royaltyCut
                 );
             }
-            IERC20(paymentToken).safeTransferFrom(msg.sender, to, amount - (platformFeeCut + royaltyCut));
+            IERC20(paymentToken).safeTransferFrom(
+                msg.sender,
+                to,
+                amount - (platformFeeCut + royaltyCut)
+            );
         }
     }
 
@@ -691,6 +734,12 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
         uint256 _listingId
     ) external view returns (Bid[] memory) {
         return (bids[_listingId]);
+    }
+
+        function getListingOffers(
+        uint256 _listingId
+    ) external view returns (Offer[] memory) {
+        return (offers[_listingId]);
     }
 
     function getUserBidBalance(
