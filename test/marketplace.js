@@ -201,8 +201,8 @@ describe("marketplace", function () {
                 await marketplace.connect(a4).bid(0, 420, 1);
                 await ether.connect(a5).approve(marketplace.getAddress(), 500);
                 await marketplace.connect(a5).bid(0, 500, 1);
-                await ether.connect(a4).approve(marketplace.getAddress(), 480);
-                await marketplace.connect(a4).bid(0, 480, 1);
+                await ether.connect(a4).approve(marketplace.getAddress(), 900);
+                await marketplace.connect(a4).bid(0, 900, 1);
                 await expect(marketplace.closeAuction(0)).to.be.reverted;
                 await time.increase(1000);
                 await ether.connect(a3).approve(marketplace.getAddress(), 350);
@@ -223,10 +223,10 @@ describe("marketplace", function () {
                     );
                     await marketplace.connect(a).withdrawal(0);
                     expect(
-                        await marketplace.getUserBidBalance(0, a)
+                        (await marketplace.getUserBidBalance(0, a)).bid
                     ).to.be.equal(0);
                     expect(await ether.balanceOf(a)).to.be.equal(
-                        beforeBal + bidsAmount
+                        beforeBal + bidsAmount.bid
                     );
                 };
                 await withdrawMony(a1);
@@ -329,6 +329,95 @@ describe("marketplace", function () {
                 expect(await ether.balanceOf(otherAccount)).to.be.equal(1980n);
                 await ether.connect(a2).approve(marketplace, 300);
                 await expect(marketplace.connect(a2).buy(0, 3)).to.be.reverted;
+            });
+        });
+        describe("Auction", async () => {
+            it("Auction type 1", async () => {
+                const {
+                    rakmansERC1155,
+                    ether,
+                    otherAccount,
+                    marketplace,
+                    owner,
+                    a1,
+                    a2,
+                    a3,
+                    a4,
+                    a5,
+                } = await loadFixture(deploy);
+                await ether.transfer(a1, 1000);
+                await ether.transfer(a2, 1000);
+                await ether.transfer(a3, 1000);
+                await ether.transfer(a4, 1000);
+                await ether.transfer(a5, 1000);
+                await ether.transfer(otherAccount, 1000);
+                await rakmansERC1155.connect(otherAccount).mint(
+                    otherAccount,
+                    0,
+                    10,
+                    "0x0000000000000000000000000000000000000000000000000000000000000000"
+                );
+                await rakmansERC1155.connect(otherAccount).setApprovalForAll(
+                    marketplace.getAddress(),
+                    true
+                );
+                await marketplace.connect(otherAccount).createList(
+                    rakmansERC1155,
+                    0,
+                    ether,
+                    5,
+                    1000,
+                    10,
+                    true
+                );
+                await ether.connect(a1).approve(marketplace.getAddress(), 40);
+                await marketplace.connect(a1).bid(0, 10, 4);
+                await ether.connect(a2).approve(marketplace.getAddress(), 90);
+                await expect(marketplace.connect(a2).bid(0, 20, 1)).to.be
+                    .reverted;
+                await expect(marketplace.connect(a2).bid(0, 3, 10)).to.be
+                    .reverted;
+                await marketplace.connect(a2).bid(0, 30, 3);
+                await ether.connect(a3).approve(marketplace.getAddress(), 150);
+                await marketplace.connect(a3).bid(0, 30, 5);
+                await ether.connect(a4).approve(marketplace.getAddress(), 160);
+                await marketplace.connect(a4).bid(0, 20, 8);
+                await ether.connect(a5).approve(marketplace.getAddress(), 300);
+                await marketplace.connect(a5).bid(0, 30, 10);
+                await ether.connect(a4).approve(marketplace.getAddress(), 1000);
+                await marketplace.connect(a4).bid(0, 80, 10);
+                await expect(marketplace.closeAuction(0)).to.be.reverted;
+                await time.increase(1000);
+                await ether.connect(a3).approve(marketplace.getAddress(), 900);
+                await expect(marketplace.connect(a3).bid(0, 90, 10)).to.be
+                    .reverted;
+                const listingBids = await marketplace.getListingBids(0);
+                const highestBidder = listingBids[listingBids.length - 1][0];
+                expect(highestBidder).to.be.equal(a4);
+                const beforeOwnerBal = await ether.balanceOf(otherAccount);
+                await marketplace.connect(a4).closeAuction(0);
+                const ownerBal = await ether.balanceOf(otherAccount);
+                expect(ownerBal).to.be.equal(beforeOwnerBal + 784n);
+                const withdrawMony = async (a) => {
+                    const beforeBal = await ether.balanceOf(a);
+                    const bidsAmount = await marketplace.getUserBidBalance(
+                        0,
+                        a
+                    );
+                    await marketplace.connect(a).withdrawal(0);
+                    expect(
+                        (await marketplace.getUserBidBalance(0, a)).bid
+                    ).to.be.equal(0);
+                    expect(await ether.balanceOf(a)).to.be.equal(
+                        beforeBal + bidsAmount.bid * bidsAmount.quantity
+                    );
+                };
+                await withdrawMony(a1);
+                await withdrawMony(a2);
+                await withdrawMony(a3);
+                await expect(withdrawMony(a4)).to.be.reverted;
+                await withdrawMony(a5);
+                expect(await rakmansERC1155.balanceOf(highestBidder,0)).to.be.equal(10n);
             });
         });
     });
