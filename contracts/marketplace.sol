@@ -38,21 +38,7 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
     struct Bid {
         address bidder;
         uint256 bid;
-    }
-    /**
-     * @dev Struct for offers
-     */
-    struct Offer {
-        uint256 id;
-        address offeror;
-        uint256 listingId;
-        uint256 price;
         uint256 quantity;
-    }
-
-    struct OfferMap {
-        uint256 offerId;
-        uint256 price;
     }
 
     /**
@@ -71,8 +57,6 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
         uint256 quantity;
         bool ended;
         bool isAuction;
-        address highestBidder;
-        bool deleted;
     }
 
     /**
@@ -101,11 +85,6 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
      */
     mapping(uint256 => Bid[]) public bids;
     mapping(uint256 => mapping(address => uint256)) public bidsMap;
-    /**
-     * @dev Mapping of listing ID to offers
-     */
-    mapping(uint256 => Offer[]) public offers;
-    mapping(uint256 => mapping(address => OfferMap)) public offersMap;
 
     /**
      * @dev Array of listings
@@ -145,14 +124,24 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
     /**
      * @dev Event emitted when an auction is closed
      */
-    event CloseAuctionLog(uint256 indexed listingId);
+    event CloseAuctionLog(
+        uint256 indexed listingId,
+        address indexed highestBidder,
+        uint256 quantity,
+        uint256 price
+    );
+    /**
+     * @dev Event emitted when an auction is canceld
+     */
+    event CancelAuctionLog(uint256 indexed listingId);
     /**
      * @dev Event emitted when a bid is placed
      */
     event BidLog(
         uint256 indexed listingId,
         address indexed bidder,
-        uint256 bidPrice
+        uint256 bidPrice,
+        uint256 quntity
     );
 
     event OfferLog(
@@ -181,15 +170,6 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
         address creator = listings[_listingId].creator;
         if (msg.sender != creator) {
             revert onlyCreatorCanCall();
-        }
-        _;
-    }
-    /**
-     * @dev Error thrown when a listing is deleted
-     */
-    modifier mustNotDeleted(uint256 _listingId) {
-        if (listings[_listingId].deleted) {
-            revert listingDeleted();
         }
         _;
     }
@@ -265,9 +245,7 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
             block.timestamp + _durationUntilEnd,
             _quantity,
             false,
-            _isAuction,
-            address(0),
-            false
+            _isAuction
         );
         listings.push(newListing);
         emit CreatListingLog(
@@ -294,12 +272,7 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
         uint256 _price,
         uint256 _durationUntilEnd,
         uint256 _quantity
-    )
-        external
-        onlyCreator(_listingId)
-        mustNotDeleted(_listingId)
-        notEnded(_listingId)
-    {
+    ) external onlyCreator(_listingId) {
         require(_price != 0, "");
         require(_durationUntilEnd != 0, "");
         require(_quantity != 0, "");
@@ -323,8 +296,6 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
             block.timestamp + _durationUntilEnd,
             _quantity,
             targetListing.isAuction,
-            false,
-            address(0),
             false
         );
         listings[_listingId] = newListing;
@@ -362,35 +333,6 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
         );
     }
 
-    // //not ended
-    // function cancelListing(uint256 _listingId)
-    //     external
-    //     onlyCreator(_listingId)
-    //     mustNotDeleted(_listingId)
-    //     notEnded(_listingId)
-    // {
-    //     Listing memory targetListing = listings[_listingId];
-    //     targetListing.deleted = true;
-    //     if (targetListing.isAuction) {
-    //         if (targetListing.tokenType == TokenType.ERC1155) {
-    //             IERC1155(targetListing.tokenContract).safeTransferFrom(
-    //                 address(this),
-    //                 targetListing.creator,
-    //                 targetListing.tokenId,
-    //                 targetListing.quantity,
-    //                 ""
-    //             );
-    //         } else {
-    //             IERC721(targetListing.tokenContract).safeTransferFrom(
-    //                 address(this),
-    //                 targetListing.creator,
-    //                 targetListing.tokenId
-    //             );
-    //         }
-    //     }
-    //     listings[_listingId] = targetListing;
-    //     // event
-    // }
     /**
      * @dev Allows a user to purchase tokens from a listing.
      * @param _listingId Unique identifier of the listing
@@ -399,7 +341,7 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
     function buy(
         uint256 _listingId,
         uint256 _quantity
-    ) external mustNotDeleted(_listingId) notEnded(_listingId) {
+    ) external notEnded(_listingId) {
         Listing memory targetListing = listings[_listingId];
         uint256 totalPrice = targetListing.price * _quantity;
         targetListing.quantity -= _quantity;
@@ -437,207 +379,125 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
      * @param _listingId Unique identifier of the listing
      * @param _bidPrice Bid price in the payment token
      */
-    // function bid(uint256 _listingId, uint256 _bidPrice) external {
-    //     require(msg.sender != address(0), "");
-    //     require(_bidPrice != 0, "");
-    //     Listing memory targetListing = listings[_listingId];
-    //     require(block.timestamp < targetListing.end, "");
-    //     uint256 lastBid = bidsMap[_listingId][msg.sender];
-    //     Bid memory newBid = Bid(msg.sender, _bidPrice + lastBid);
-    //     Bid[] memory bidsOfListing = bids[_listingId];
-    //     uint256 newBidPrice = newBid.bid;
-    //     if (bidsOfListing.length > 0) {
-    //         Bid memory currentHighestBid = bidsOfListing[
-    //             bidsOfListing.length - 1
-    //         ];
-    //         uint256 currentBidPrice = currentHighestBid.bid;
-    //         require(
-    //             (newBidPrice + lastBid > currentBidPrice &&
-    //                 ((newBidPrice + lastBid - currentBidPrice) * MAX_BPS) /
-    //                     currentBidPrice >=
-    //                 BID_BUFFER_BPS),
-    //             ""
-    //         );
-    //     } else {
-    //         require(newBidPrice >= targetListing.price, "");
-    //     }
-    //     bids[_listingId].push(newBid);
-    //     bidsMap[_listingId][msg.sender] = _bidPrice + lastBid;
-    //     targetListing.highestBidder = msg.sender;
-    //     if (targetListing.end - block.timestamp <= TIME_BUFFER) {
-    //         targetListing.end += TIME_BUFFER;
-    //     }
-    //     listings[_listingId] = targetListing;
-    //     checkBalanceAndAllowance(
-    //         msg.sender,
-    //         targetListing.paymentToken,
-    //         _bidPrice * targetListing.quantity
-    //     );
-    //     IERC20(targetListing.paymentToken).safeTransferFrom(
-    //         msg.sender,
-    //         address(this),
-    //         _bidPrice * targetListing.quantity
-    //     );
-    //     emit BidLog(_listingId, msg.sender, newBidPrice + lastBid);
-    // }
-
-    /**
-     * @dev Allows a user to make an offer on a fixed-price listing.
-     * @param _listingId Unique identifier of the listing
-     * @param _price Offer price in the payment token
-     * @param _quantity Quantity of tokens being offered
-     */
-    function offer(
+    function bid(
         uint256 _listingId,
-        uint256 _price,
+        uint256 _bidPrice,
         uint256 _quantity
     ) external {
+        require(msg.sender != address(0), "");
+        require(_bidPrice != 0, "");
+        require(_quantity != 0, "");
         Listing memory targetListing = listings[_listingId];
         require(block.timestamp < targetListing.end, "");
-        require(!targetListing.isAuction, "");
-        require(_price < targetListing.price, "");
         if (targetListing.tokenType == TokenType.ERC721) {
             _quantity = 1;
         }
-        OfferMap memory lastOffer = offersMap[_listingId][msg.sender];
-        checkBalanceAndAllowance(
-            msg.sender,
-            targetListing.paymentToken,
-            (_price + lastOffer.price) * _quantity
-        );
-        Offer[] memory offersOfListing = offers[_listingId];
-        Offer memory newOffer = Offer(
-            lastOffer.price > 0 ? lastOffer.offerId : offersOfListing.length,
-            msg.sender,
-            _listingId,
-            _price + lastOffer.price,
-            _quantity
-        );
-        uint256 newOfferPrice = _price + lastOffer.price;
-        if (offersOfListing.length > 0) {
-            Offer memory currentOffer = offersOfListing[
-                offersOfListing.length - 1
+        uint256 lastBid = bidsMap[_listingId][msg.sender];
+        Bid memory newBid = Bid(msg.sender, _bidPrice + lastBid, _quantity);
+        Bid[] memory bidsOfListing = bids[_listingId];
+        uint256 newBidPrice = newBid.bid;
+        if (bidsOfListing.length > 0) {
+            Bid memory currentHighestBid = bidsOfListing[
+                bidsOfListing.length - 1
             ];
-            uint256 currentOfferPrice = currentOffer.price;
+            uint256 currentBidPrice = currentHighestBid.bid;
             require(
-                (newOfferPrice + lastOffer.price > currentOfferPrice &&
-                    (((newOfferPrice + lastOffer.price) - currentOfferPrice) *
-                        MAX_BPS) /
-                        currentOfferPrice >=
+                (newBidPrice + lastBid > currentBidPrice &&
+                    ((newBidPrice + lastBid - currentBidPrice) * MAX_BPS) /
+                        currentBidPrice >=
                     BID_BUFFER_BPS),
                 ""
             );
         } else {
-            require(newOfferPrice < targetListing.price, "");
+            require(newBidPrice >= targetListing.price, "");
         }
+        bids[_listingId].push(newBid);
+        bidsMap[_listingId][msg.sender] = _bidPrice + lastBid;
         if (targetListing.end - block.timestamp <= TIME_BUFFER) {
             targetListing.end += TIME_BUFFER;
         }
-        if (lastOffer.price != 0) {
-            offersMap[_listingId][msg.sender] = OfferMap(
-                lastOffer.offerId,
-                newOfferPrice
-            );
-            offers[_listingId][lastOffer.offerId] = newOffer;
-        } else {
-            offersMap[_listingId][msg.sender] = OfferMap(
-                offersOfListing.length,
-                newOfferPrice
-            );
-            offers[_listingId].push(newOffer);
-        }
-        emit OfferLog(_listingId, msg.sender, newOfferPrice);
-    }
-
-    /**
-     * @dev Allows the creator to accept an offer on a fixed-price listing.
-     * @param _listingId Unique identifier of the listing
-     * @param _offerId Unique identifier of the offer
-     */
-    function acceptOffer(
-        uint256 _listingId,
-        uint256 _offerId
-    ) external onlyCreator(_listingId) {
-        Listing memory targetListing = listings[_listingId];
-        Offer memory targetOffer = offers[_listingId][_offerId];
-        uint256 totalPrice = targetOffer.price * targetOffer.quantity;
-        targetListing.quantity -= targetOffer.quantity;
-        targetListing.ended = targetListing.quantity == 0;
         listings[_listingId] = targetListing;
-        uint256 platformFeeCut = (totalPrice * PLATFORM_FEE) / MAX_BPS;
-        (address royaltyRecipient, uint256 royaltyCut) = getRoyalty(
-            targetListing.tokenContract,
-            targetListing.tokenId,
-            totalPrice,
-            platformFeeCut
+        checkBalanceAndAllowance(
+            msg.sender,
+            targetListing.paymentToken,
+            _bidPrice * _quantity
         );
-        payout(
-            targetOffer.offeror,
-            targetListing.creator,
-            totalPrice,
-            platformFeeCut,
-            royaltyCut,
-            royaltyRecipient,
-            targetListing.paymentToken
+        IERC20(targetListing.paymentToken).safeTransferFrom(
+            msg.sender,
+            address(this),
+            _bidPrice * _quantity
         );
-        transferToken(
-            targetListing.tokenContract,
-            targetListing.creator,
-            targetOffer.offeror,
-            targetListing.tokenId,
-            targetOffer.quantity,
-            targetListing.tokenType
-        );
-        emit BuyLog(
-            _listingId,
-            targetOffer.offeror,
-            targetOffer.quantity,
-            targetOffer.price
-        );
+        emit BidLog(_listingId, msg.sender, newBidPrice + lastBid, _quantity);
     }
 
     /**
      * @dev Allows the creator to close an auction listing.
      * @param _listingId Unique identifier of the listing
      */
-    // function closeAuction(uint256 _listingId) external {
-    //     Listing memory targetListing = listings[_listingId];
-    //     require(targetListing.isAuction, "");
-    //     require(!targetListing.ended, "");
-    //     require(block.timestamp > targetListing.end, "");
-    //     bidsMap[_listingId][targetListing.highestBidder] = 0;
-    //     targetListing.ended = true;
-    //     listings[_listingId] = targetListing;
-    //     Bid[] memory listingBids = bids[_listingId];
-    //     Bid memory highestBid = listingBids[listingBids.length - 1];
-    //     require(highestBid.bidder != address(0), "");
-    //     uint256 totalPrice = highestBid.bid * targetListing.quantity;
-    //     uint256 platformFeeCut = (totalPrice * PLATFORM_FEE) / MAX_BPS;
-    //     (address royaltyRecipient, uint256 royaltyCut) = getRoyalty(
-    //         targetListing.tokenContract,
-    //         targetListing.tokenId,
-    //         totalPrice,
-    //         platformFeeCut
-    //     );
-    //     payout(
-    //         address(this),
-    //         targetListing.creator,
-    //         totalPrice,
-    //         platformFeeCut,
-    //         royaltyCut,
-    //         royaltyRecipient,
-    //         targetListing.paymentToken
-    //     );
-    //     transferToken(
-    //         targetListing.tokenContract,
-    //         address(this),
-    //         targetListing.highestBidder,
-    //         targetListing.tokenId,
-    //         targetListing.quantity,
-    //         targetListing.tokenType
-    //     );
-    //     emit CloseAuctionLog(_listingId);
-    // }
+    function closeAuction(uint256 _listingId) external {
+        Listing memory targetListing = listings[_listingId];
+        require(targetListing.isAuction, "");
+        require(!targetListing.ended, "");
+        require(block.timestamp > targetListing.end, "");
+        targetListing.ended = true;
+        listings[_listingId] = targetListing;
+        Bid[] memory listingBids = bids[_listingId];
+        if (listingBids.length == 0) {
+            transferToken(
+                targetListing.tokenContract,
+                address(this),
+                targetListing.creator,
+                targetListing.tokenId,
+                targetListing.quantity,
+                targetListing.tokenType
+            );
+            emit CancelAuctionLog(_listingId);
+        } else {
+            Bid memory highestBid = listingBids[listingBids.length - 1];
+            bidsMap[_listingId][highestBid.bidder] = 0;
+            uint256 totalPrice = highestBid.bid * highestBid.quantity;
+            uint256 platformFeeCut = (totalPrice * PLATFORM_FEE) / MAX_BPS;
+            (address royaltyRecipient, uint256 royaltyCut) = getRoyalty(
+                targetListing.tokenContract,
+                targetListing.tokenId,
+                totalPrice,
+                platformFeeCut
+            );
+            payout(
+                address(this),
+                targetListing.creator,
+                totalPrice,
+                platformFeeCut,
+                royaltyCut,
+                royaltyRecipient,
+                targetListing.paymentToken
+            );
+            transferToken(
+                targetListing.tokenContract,
+                address(this),
+                highestBid.bidder,
+                targetListing.tokenId,
+                highestBid.quantity,
+                targetListing.tokenType
+            );
+            if (targetListing.quantity - highestBid.quantity > 0) {
+                transferToken(
+                    targetListing.tokenContract,
+                    address(this),
+                    targetListing.creator,
+                    targetListing.tokenId,
+                    targetListing.quantity - highestBid.quantity,
+                    targetListing.tokenType
+                );
+            }
+            emit CloseAuctionLog(
+                _listingId,
+                highestBid.bidder,
+                highestBid.quantity,
+                highestBid.bid
+            );
+        }
+    }
 
     /**
      * @dev Withdraws the user's bid from a listing.
@@ -764,12 +624,6 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
         uint256 _listingId
     ) external view returns (Bid[] memory) {
         return (bids[_listingId]);
-    }
-
-    function getListingOffers(
-        uint256 _listingId
-    ) external view returns (Offer[] memory) {
-        return (offers[_listingId]);
     }
 
     function getUserBidBalance(

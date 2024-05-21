@@ -26,7 +26,7 @@ describe("marketplace", function () {
         const RakmansERC1155 = await ethers.getContractFactory(
             "RakmansERC1155"
         );
-        const rakmansERC1155 = await RakmansERC1155.deploy(owner);
+        const rakmansERC1155 = await RakmansERC1155.deploy(otherAccount);
 
         const Ether = await ethers.getContractFactory("Ether");
         const ether = await Ether.deploy();
@@ -47,208 +47,199 @@ describe("marketplace", function () {
             a5,
         };
     }
-
-    describe("create and edit listing", function () {
-        it("edit listing", async () => {
-            const { rakmansNFT, ether, marketplace, owner, otherAccount } =
-                await loadFixture(deploy);
-            await rakmansNFT.safeMint(owner, "rakmansNFT.github.io");
-            await rakmansNFT.approve(marketplace.getAddress(), 0);
-            await marketplace.createList(
-                rakmansNFT.getAddress(),
-                0,
-                ether.getAddress(),
-                10,
-                1000,
-                1,
-                false
-            );
-            let listing = await marketplace.getListing(0);
-            expect(listing.price).to.equal(10);
-            await marketplace.editListing(0, ether.getAddress(), 100, 1000, 1);
-            listing = await marketplace.getListing(0);
-            expect(listing.price).to.equal(100);
-        });
-    });
-    describe("ERC721 Auction and sale test", () => {
-        it("test with ERC721 sale mode listing", async function () {
+    describe("create and edit", async () => {
+        it("test with address(0)", async () => {
             const { rakmansNFT, ether, marketplace, owner, otherAccount } =
                 await loadFixture(deploy);
             await rakmansNFT.safeMint(otherAccount, "rakmansNFT.github.io");
             await rakmansNFT
                 .connect(otherAccount)
                 .approve(marketplace.getAddress(), 0);
-            // less than 10 (decimals)
-            await marketplace
-                .connect(otherAccount)
-                .createList(
+            await expect(
+                marketplace
+                    .connect(otherAccount)
+                    .createList(
+                        "0x0000000000000000000000000000000000000000",
+                        0,
+                        await ether.getAddress(),
+                        900,
+                        1000,
+                        1,
+                        false
+                    )
+            ).to.be.reverted;
+            await expect(
+                marketplace
+                    .connect(otherAccount)
+                    .createList(
+                        await rakmansNFT.getAddress(),
+                        0,
+                        "0x0000000000000000000000000000000000000000",
+                        900,
+                        1000,
+                        1,
+                        false
+                    )
+            ).to.be.reverted;
+        });
+        it("create and edit listing", async () => {
+            const { rakmansNFT, ether, marketplace, owner, otherAccount } =
+                await loadFixture(deploy);
+            await rakmansNFT.safeMint(owner, "rakmansNFT.github.io");
+            await rakmansNFT.approve(marketplace.getAddress(), 0);
+            await expect(marketplace.getListing(0)).to.be.reverted;
+            await marketplace.createList(
+                await rakmansNFT.getAddress(),
+                0,
+                await ether.getAddress(),
+                10,
+                1000,
+                100,
+                false
+            );
+            let listing = await marketplace.getListing(0);
+            expect(listing.tokenContract).to.equal(
+                await rakmansNFT.getAddress()
+            );
+            expect(listing.id).to.equal(0);
+            expect(listing.paymentToken).to.equal(await ether.getAddress());
+            expect(listing.price).to.equal(10);
+            expect(listing.end).to.equal((await time.latest()) + 1000);
+            expect(listing.quantity).to.equal(1);
+            expect(listing.isAuction).to.equal(false);
+            await marketplace.editListing(
+                0,
+                await ether.getAddress(),
+                100,
+                1000,
+                1
+            );
+            listing = await marketplace.getListing(0);
+            expect(listing.tokenContract).to.equal(
+                await rakmansNFT.getAddress()
+            );
+            expect(listing.id).to.equal(0);
+            expect(listing.paymentToken).to.equal(await ether.getAddress());
+            expect(listing.price).to.equal(100);
+            expect(listing.end).to.equal((await time.latest()) + 1000);
+            expect(listing.quantity).to.equal(1);
+            expect(listing.isAuction).to.equal(false);
+            await expect(
+                marketplace
+                    .connect(otherAccount)
+                    .editListing(0, await ether.getAddress(), 1000, 2000, 1)
+            ).to.be.reverted;
+        });
+    });
+    describe("ERC721", () => {
+        describe("Sale", () => {
+            it("Sale type 1", async () => {
+                const { rakmansNFT, ether, marketplace, owner, otherAccount } =
+                    await loadFixture(deploy);
+                await rakmansNFT.safeMint(otherAccount, "rakmansNFT.github.io");
+                await rakmansNFT
+                    .connect(otherAccount)
+                    .approve(marketplace.getAddress(), 0);
+                await marketplace
+                    .connect(otherAccount)
+                    .createList(
+                        await rakmansNFT.getAddress(),
+                        0,
+                        await ether.getAddress(),
+                        900,
+                        1000,
+                        1,
+                        false
+                    );
+                await ether.approve(marketplace, 900);
+                await marketplace.buy(0, 1);
+                expect(await rakmansNFT.ownerOf(0)).to.equal(owner);
+                expect(await ether.balanceOf(otherAccount)).to.equal(1837);
+                expect(await ether.balanceOf(owner)).to.equal(8163);
+            });
+        });
+        describe("Auction", async function () {
+            it("Auction type 1", async () => {
+                const {
+                    rakmansNFT,
+                    ether,
+                    marketplace,
+                    owner,
+                    a1,
+                    a2,
+                    a3,
+                    a4,
+                    a5,
+                } = await loadFixture(deploy);
+                await ether.transfer(a1, 1000);
+                await ether.transfer(a2, 1000);
+                await ether.transfer(a3, 1000);
+                await ether.transfer(a4, 1000);
+                await ether.transfer(a5, 1000);
+                await rakmansNFT.safeMint(owner, "rakmansNFT.github.io");
+                await rakmansNFT.approve(marketplace.getAddress(), 0);
+                await marketplace.createList(
                     rakmansNFT.getAddress(),
                     0,
                     ether.getAddress(),
-                    900,
+                    200,
                     1000,
                     1,
-                    false
+                    true
                 );
-            const listing = await marketplace.getListing(0);
-            await ether.approve(marketplace, 900);
-            await marketplace.buy(0, 1);
-            expect(await rakmansNFT.ownerOf(0)).to.equal(owner);
-            expect(await ether.balanceOf(otherAccount)).to.equal(1837);
-            expect(await ether.balanceOf(owner)).to.equal(8163);
+                await ether.connect(a1).approve(marketplace.getAddress(), 220);
+                await marketplace.connect(a1).bid(0, 205, 1);
+                await ether.connect(a2).approve(marketplace.getAddress(), 250);
+                await expect(marketplace.connect(a2).bid(0, 210, 1)).to.be
+                    .reverted;
+                await expect(marketplace.connect(a2).bid(0, 205, 1)).to.be
+                    .reverted;
+                await marketplace.connect(a2).bid(0, 250, 1);
+                await ether.connect(a3).approve(marketplace.getAddress(), 350);
+                await marketplace.connect(a3).bid(0, 350, 1);
+                await ether.connect(a4).approve(marketplace.getAddress(), 420);
+                await marketplace.connect(a4).bid(0, 420, 1);
+                await ether.connect(a5).approve(marketplace.getAddress(), 500);
+                await marketplace.connect(a5).bid(0, 500, 1);
+                await ether.connect(a4).approve(marketplace.getAddress(), 480);
+                await marketplace.connect(a4).bid(0, 480, 1);
+                await expect(marketplace.closeAuction(0)).to.be.reverted;
+                await time.increase(1000);
+                await ether.connect(a3).approve(marketplace.getAddress(), 350);
+                await expect(marketplace.connect(a3).bid(0, 350, 1)).to.be
+                    .reverted;
+                const listingBids = await marketplace.getListingBids(0);
+                const highestBidder = listingBids[listingBids.length - 1][0];
+                expect(highestBidder).to.be.equal(a4);
+                const beforeOwnerBal = await ether.balanceOf(owner);
+                await marketplace.connect(a4).closeAuction(0);
+                const ownerBal = await ether.balanceOf(owner);
+                expect(ownerBal).to.be.equal(beforeOwnerBal + 900n);
+                const withdrawMony = async (a) => {
+                    const beforeBal = await ether.balanceOf(a);
+                    const bidsAmount = await marketplace.getUserBidBalance(
+                        0,
+                        a
+                    );
+                    await marketplace.connect(a).withdrawal(0);
+                    expect(
+                        await marketplace.getUserBidBalance(0, a)
+                    ).to.be.equal(0);
+                    expect(await ether.balanceOf(a)).to.be.equal(
+                        beforeBal + bidsAmount
+                    );
+                };
+                await withdrawMony(a1);
+                await withdrawMony(a2);
+                await withdrawMony(a3);
+                await expect(withdrawMony(a4)).to.be.reverted;
+                await withdrawMony(a5);
+                expect(await rakmansNFT.ownerOf(0)).to.be.equal(highestBidder);
+            });
         });
-        // it("test with ERC721 Auction mode listing", async function () {
-        //     const {
-        //         rakmansNFT,
-        //         ether,
-        //         marketplace,
-        //         owner,
-        //         a1,
-        //         a2,
-        //         a3,
-        //         a4,
-        //         a5,
-        //     } = await loadFixture(deploy);
-        //     await ether.transfer(a1, 1000);
-        //     await ether.transfer(a2, 1000);
-        //     await ether.transfer(a3, 1000);
-        //     await ether.transfer(a4, 1000);
-        //     await ether.transfer(a5, 1000);
-        //     await rakmansNFT.safeMint(owner, "rakmansNFT.github.io");
-        //     await rakmansNFT.approve(marketplace.getAddress(), 0);
-        //     await marketplace.createList(
-        //         rakmansNFT.getAddress(),
-        //         0,
-        //         ether.getAddress(),
-        //         200,
-        //         1000,
-        //         1,
-        //         true
-        //     );
-        //     await ether.connect(a1).approve(marketplace.getAddress(), 220);
-        //     await marketplace.connect(a1).bid(0, 205);
-        //     await ether.connect(a2).approve(marketplace.getAddress(), 250);
-        //     await expect(marketplace.connect(a2).bid(0, 210)).to.be.reverted;
-        //     await expect(marketplace.connect(a2).bid(0, 205)).to.be.reverted;
-        //     await marketplace.connect(a2).bid(0, 250);
-        //     await ether.connect(a3).approve(marketplace.getAddress(), 350);
-        //     await marketplace.connect(a3).bid(0, 350);
-        //     await ether.connect(a4).approve(marketplace.getAddress(), 420);
-        //     await marketplace.connect(a4).bid(0, 420);
-        //     await ether.connect(a5).approve(marketplace.getAddress(), 500);
-        //     await marketplace.connect(a5).bid(0, 500);
-        //     await ether.connect(a4).approve(marketplace.getAddress(), 480);
-        //     await marketplace.connect(a4).bid(0, 480);
-        //     await expect(marketplace.closeAuction(0)).to.be.reverted;
-        //     await time.increase(1000);
-        //     await ether.connect(a3).approve(marketplace.getAddress(), 350);
-        //     await expect(marketplace.connect(a3).bid(0, 350)).to.be.reverted;
-        //     const listingBids = await marketplace.getListingBids(0);
-        //     const highestBidder = listingBids[listingBids.length - 1][0];
-        //     expect(highestBidder).to.be.equal(a4);
-        //     const beforeOwnerBal = await ether.balanceOf(owner);
-        //     await marketplace.connect(a4).closeAuction(0);
-        //     const ownerBal = await ether.balanceOf(owner);
-        //     expect(ownerBal).to.be.equal(beforeOwnerBal + 900n);
-        //     const withdrawMony = async (a) => {
-        //         const beforeBal = await ether.balanceOf(a);
-        //         const bidsAmount = await marketplace.getUserBidBalance(0, a);
-        //         await marketplace.connect(a).withdrawal(0);
-        //         expect(await marketplace.getUserBidBalance(0, a)).to.be.equal(
-        //             0
-        //         );
-        //         expect(await ether.balanceOf(a)).to.be.equal(
-        //             beforeBal + bidsAmount
-        //         );
-        //     };
-        //     await withdrawMony(a1);
-        //     await withdrawMony(a2);
-        //     await withdrawMony(a3);
-        //     await expect(withdrawMony(a4)).to.be.reverted;
-        //     await withdrawMony(a5);
-        //     expect(await rakmansNFT.ownerOf(0)).to.be.equal(highestBidder);
-        // });
-        it("test with ERC721 Offer mode listing", async () => {
-            const {
-                rakmansNFT,
-                ether,
-                marketplace,
-                owner,
-                a1,
-                a2,
-                a3,
-                a4,
-                a5,
-            } = await loadFixture(deploy);
-            await ether.transfer(a1, 1000);
-            await ether.transfer(a2, 1000);
-            await ether.transfer(a3, 1000);
-            await ether.transfer(a4, 1000);
-            await ether.transfer(a5, 1000);
-            await rakmansNFT.safeMint(owner, "rakmansNFT.github.io");
-            await rakmansNFT.approve(marketplace.getAddress(), 0);
-            await marketplace.createList(
-                rakmansNFT.getAddress(),
-                0,
-                ether.getAddress(),
-                200,
-                1000,
-                1,
-                false
-            );
-
-            await ether.connect(a1).approve(marketplace.getAddress(), 160);
-            // await expect(marketplace.connect(a1).bid(0, 205)).to.be.reverted;
-            await expect(marketplace.connect(a1).offer(0, 200, 10)).to.be
-                .reverted;
-            await expect(marketplace.connect(a1).offer(0, 205, 10)).to.be
-                .reverted;
-            await marketplace.connect(a1).offer(0, 160, 10);
-
-            await ether.connect(a2).approve(marketplace.getAddress(), 170);
-            await expect(marketplace.connect(a2).offer(0, 160, 1)).to.be
-                .reverted;
-            await expect(marketplace.connect(a2).offer(0, 162, 1)).to.be
-                .reverted;
-            await marketplace.connect(a2).offer(0, 170, 1);
-
-            await ether.connect(a3).approve(marketplace.getAddress(), 180);
-            await marketplace.connect(a3).offer(0, 180, 1);
-
-            await ether.connect(a1).approve(marketplace.getAddress(), 190);
-            await marketplace.connect(a1).offer(0, 30, 1);
-
-            await time.increase(1500);
-            await ether.connect(a3).approve(marketplace.getAddress(), 350);
-            await expect(marketplace.connect(a3).offer(0, 100, 1)).to.be
-                .reverted;
-            const listingOffers = await marketplace.getListingOffers(0);
-
-            const beforeOwnerBal = await ether.balanceOf(owner);
-            await marketplace.acceptOffer(0,0);
-            const ownerBal = await ether.balanceOf(owner);
-            expect(ownerBal).to.be.equal(beforeOwnerBal + 190n);
-            expect(await rakmansNFT.ownerOf(0)).to.be.equal(listingOffers[0][1]);
-            // const withdrawMony = async (a) => {
-            //     const beforeBal = await ether.balanceOf(a);
-            //     const bidsAmount = await marketplace.getUserBidBalance(0, a);
-            //     await marketplace.connect(a).withdrawal(0);
-            //     expect(await marketplace.getUserBidBalance(0, a)).to.be.equal(
-            //         0
-            //     );
-            //     expect(await ether.balanceOf(a)).to.be.equal(
-            //         beforeBal + bidsAmount
-            //     );
-            // };
-            // await withdrawMony(a1);
-            // await withdrawMony(a2);
-            // await withdrawMony(a3);
-            // await expect(withdrawMony(a4)).to.be.reverted;
-            // await withdrawMony(a5);
-            // expect(await rakmansNFT.ownerOf(0)).to.be.equal(highestBidder);
-        });
-
-        // it("test with ERC721 Auction mode listing", async function () {
+    });
+    describe("ERC1155", () => {
+        // it("test with ERC1155 sale mode listing", async () => {
         //     const { rakmansERC1155, ether, marketplace, owner } =
         //         await loadFixture(deploy);
         //     await rakmansERC1155.mint(
@@ -265,13 +256,80 @@ describe("marketplace", function () {
         //         rakmansERC1155.getAddress(),
         //         0,
         //         ether.getAddress(),
-        //         0,
+        //         100,
         //         1000,
         //         10,
-        //         10,
-        //         true
+        //         false
         //     );
         //     const listing = await marketplace.getListing(0);
         // });
+        describe("Sale", async () => {
+            it("Sale type 1", async () => {
+                const {
+                    rakmansERC1155,
+                    ether,
+                    marketplace,
+                    owner,
+                    otherAccount,
+                } = await loadFixture(deploy);
+                await rakmansERC1155
+                    .connect(otherAccount)
+                    .mint(
+                        otherAccount,
+                        0,
+                        10,
+                        "0x0000000000000000000000000000000000000000000000000000000000000000"
+                    );
+                await rakmansERC1155
+                    .connect(otherAccount)
+                    .setApprovalForAll(marketplace.getAddress(), true);
+                await marketplace
+                    .connect(otherAccount)
+                    .createList(rakmansERC1155, 0, ether, 100, 1000, 10, false);
+                await ether.approve(marketplace, 1000);
+                await marketplace.buy(0, 10);
+                expect(await rakmansERC1155.balanceOf(owner, 0)).to.be.equal(
+                    10n
+                );
+                expect(await ether.balanceOf(otherAccount)).to.be.equal(1980n);
+            });
+            it("Sale type 2", async () => {
+                const {
+                    rakmansERC1155,
+                    ether,
+                    marketplace,
+                    owner,
+                    otherAccount,
+                    a1,
+                    a2,
+                } = await loadFixture(deploy);
+                await rakmansERC1155
+                    .connect(otherAccount)
+                    .mint(
+                        otherAccount,
+                        0,
+                        10,
+                        "0x0000000000000000000000000000000000000000000000000000000000000000"
+                    );
+                await ether.transfer(a1, 600);
+                await ether.transfer(a2, 300);
+                await rakmansERC1155
+                    .connect(otherAccount)
+                    .setApprovalForAll(marketplace.getAddress(), true);
+                await marketplace
+                    .connect(otherAccount)
+                    .createList(rakmansERC1155, 0, ether, 100, 1000, 10, false);
+                await ether.approve(marketplace, 400);
+                await marketplace.buy(0, 4);
+                expect(await rakmansERC1155.balanceOf(owner, 0)).to.be.equal(4);
+                expect(await ether.balanceOf(otherAccount)).to.be.equal(1392n);
+                await ether.connect(a1).approve(marketplace, 600);
+                await marketplace.connect(a1).buy(0, 6);
+                expect(await rakmansERC1155.balanceOf(a1, 0)).to.be.equal(6);
+                expect(await ether.balanceOf(otherAccount)).to.be.equal(1980n);
+                await ether.connect(a2).approve(marketplace, 300);
+                await expect(marketplace.connect(a2).buy(0, 3)).to.be.reverted;
+            });
+        });
     });
 });
