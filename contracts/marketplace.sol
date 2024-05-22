@@ -81,7 +81,7 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
     uint256 TIME_BUFFER;
 
     /**
-     * @dev Mapping of listing ID to bids
+     * @dev Mapping of listing ID _to bids
      */
     mapping(uint256 => Bid[]) public bids;
     mapping(uint256 => mapping(address => Bid)) public bidsMap;
@@ -166,8 +166,8 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
     /**
      * @dev Error thrown when only the creator can call a function
      */
-    modifier onlyCreator(uint256 listingId) {
-        if (msg.sender != listings[listingId].creator) {
+    modifier onlyCreator(uint256 _listingId) {
+        if (msg.sender != listings[_listingId].creator) {
             revert onlyCreatorCanCall();
         }
         _;
@@ -175,8 +175,8 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
     /**
      * @dev Error thrown when a listing has ended
      */
-    modifier notEnded(uint256 listingId) {
-        if (listings[listingId].ended) {
+    modifier notEnded(uint256 _listingId) {
+        if (listings[_listingId].ended) {
             revert listingEnded();
         }
         _;
@@ -197,107 +197,107 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
 
     /**
      * @dev Creates a new listing.
-     * @param tokenContract Address of the token contract
-     * @param tokenId Token ID
-     * @param paymentToken Address of the payment token
-     * @param price Listing price
-     * @param durationUntilEnd Duration of the listing until it ends
-     * @param quantity Quantity available for sale
-     * @param isAuction Flag indicating if the listing is an auction
+     * @param _tokenContract Address of the token contract
+     * @param _tokenId Token ID
+     * @param _paymentToken Address of the payment token
+     * @param _price Listing _price
+     * @param _durationUntilEnd Duration of the listing until it ends
+     * @param _quantity Quantity available for sale
+     * @param _isAuction Flag indicating if the listing is an auction
      */
     function createList(
-        address tokenContract,
-        uint256 tokenId,
-        address paymentToken,
-        uint256 price,
-        uint256 durationUntilEnd,
-        uint256 quantity,
-        bool isAuction
+        address _tokenContract,
+        uint256 _tokenId,
+        address _paymentToken,
+        uint256 _price,
+        uint256 _durationUntilEnd,
+        uint256 _quantity,
+        bool _isAuction
     ) external {
-        require(price != 0, "price != 0");
-        require(durationUntilEnd != 0, "duration != 0");
-        require(quantity != 0, "quantity != 0");
-        require(paymentToken != address(0), "");
+        require(_price != 0, "_price != 0");
+        require(_durationUntilEnd != 0, "duration != 0");
+        require(_quantity != 0, "_quantity != 0");
+        require(_paymentToken != address(0), "");
         address creator = msg.sender;
-        TokenType tokenType = getTokenType(tokenContract);
-        quantity = tokenType == TokenType.ERC721 ? 1 : quantity;
-        validateToken(tokenContract, tokenId, creator, quantity, tokenType);
-        if (isAuction) {
+        TokenType tokenType = getTokenType(_tokenContract);
+        _quantity = tokenType == TokenType.ERC721 ? 1 : _quantity;
+        validateToken(_tokenContract, _tokenId, creator, _quantity, tokenType);
+        if (_isAuction) {
             transferToken(
-                tokenContract,
+                _tokenContract,
                 creator,
                 address(this),
-                tokenId,
-                quantity,
+                _tokenId,
+                _quantity,
                 tokenType
             );
         }
         Listing memory newListing = Listing(
             listings.length,
-            tokenContract,
-            tokenId,
+            _tokenContract,
+            _tokenId,
             tokenType,
             creator,
-            paymentToken,
-            price,
+            _paymentToken,
+            _price,
             block.timestamp,
-            block.timestamp + durationUntilEnd,
-            quantity,
+            block.timestamp + _durationUntilEnd,
+            _quantity,
             false,
-            isAuction
+            _isAuction
         );
         listings.push(newListing);
         emit CreatListingLog(
             newListing.id,
             creator,
-            tokenContract,
-            tokenId,
-            quantity,
-            isAuction
+            _tokenContract,
+            _tokenId,
+            _quantity,
+            _isAuction
         );
     }
 
     /**
      * @dev Edits an existing listing.
-     * @param listingId Unique identifier of the listing
-     * @param paymentToken Address of the payment token
-     * @param price New listing price
-     * @param durationUntilEnd New duration for the listing until it ends
-     * @param quantity New quantity available for sale
+     * @param _listingId Unique identifier of the listing
+     * @param _paymentToken Address of the payment token
+     * @param _price New listing _price
+     * @param _durationUntilEnd New duration for the listing until it ends
+     * @param _quantity New _quantity available for sale
      */
     function editListing(
-        uint256 listingId,
-        address paymentToken,
-        uint256 price,
-        uint256 durationUntilEnd,
-        uint256 quantity
-    ) external onlyCreator(listingId) {
-        require(price != 0, "");
-        require(durationUntilEnd != 0, "");
-        require(quantity != 0, "");
-        require(paymentToken != address(0), "");
-        Listing memory targetListing = listings[listingId];
+        uint256 _listingId,
+        address _paymentToken,
+        uint256 _price,
+        uint256 _durationUntilEnd,
+        uint256 _quantity
+    ) external onlyCreator(_listingId) {
+        require(_price != 0, "");
+        require(_durationUntilEnd != 0, "");
+        require(_quantity != 0, "");
+        require(_paymentToken != address(0), "");
+        Listing memory targetListing = listings[_listingId];
         if (targetListing.tokenType == TokenType.ERC721) {
-            quantity = 1;
+            _quantity = 1;
         }
         if (targetListing.isAuction) {
-            price = targetListing.price;
+            _price = targetListing.price;
         }
         Listing memory newListing = Listing(
-            listingId,
+            _listingId,
             targetListing.tokenContract,
             targetListing.tokenId,
             targetListing.tokenType,
             targetListing.creator,
-            paymentToken,
-            price,
+            _paymentToken,
+            _price,
             targetListing.start,
-            block.timestamp + durationUntilEnd,
-            quantity,
+            block.timestamp + _durationUntilEnd,
+            _quantity,
             targetListing.isAuction,
             false
         );
-        listings[listingId] = newListing;
+        listings[_listingId] = newListing;
         if (targetListing.isAuction) {
             transferToken(
                 targetListing.tokenContract,
@@ -311,7 +311,7 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
                 targetListing.tokenContract,
                 targetListing.tokenId,
                 targetListing.creator,
-                quantity,
+                _quantity,
                 targetListing.tokenType
             );
             transferToken(
@@ -319,12 +319,12 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
                 targetListing.creator,
                 address(this),
                 targetListing.tokenId,
-                quantity,
+                _quantity,
                 targetListing.tokenType
             );
         }
         emit EditListingLog(
-            listingId,
+            _listingId,
             targetListing.creator,
             targetListing.tokenContract,
             targetListing.tokenId,
@@ -333,33 +333,33 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
     }
 
     /**
-     * @dev Allows a user to purchase tokens from a listing.
-     * @param listingId Unique identifier of the listing
-     * @param quantity Quantity of tokens to purchase
+     * @dev Allows a user _to purchase tokens _from a listing.
+     * @param _listingId Unique identifier of the listing
+     * @param _quantity Quantity of tokens _to purchase
      */
     function buy(
-        uint256 listingId,
-        uint256 quantity
-    ) external notEnded(listingId) {
-        Listing memory targetListing = listings[listingId];
-        uint256 totalPrice = targetListing.price * quantity;
-        targetListing.quantity -= quantity;
+        uint256 _listingId,
+        uint256 _quantity
+    ) external notEnded(_listingId) {
+        Listing memory targetListing = listings[_listingId];
+        uint256 _totalPrice = targetListing.price * _quantity;
+        targetListing.quantity -= _quantity;
         targetListing.ended = targetListing.quantity == 0;
-        listings[listingId] = targetListing;
-        uint256 platformFeeCut = (totalPrice * PLATFORM_FEE) / MAX_BPS;
-        (address royaltyRecipient, uint256 royaltyCut) = getRoyalty(
+        listings[_listingId] = targetListing;
+        uint256 _platformFeeCut = (_totalPrice * PLATFORM_FEE) / MAX_BPS;
+        (address _royaltyRecipient, uint256 _royaltyCut) = getRoyalty(
             targetListing.tokenContract,
             targetListing.tokenId,
-            totalPrice,
-            platformFeeCut
+            _totalPrice,
+            _platformFeeCut
         );
         payout(
             msg.sender,
             targetListing.creator,
-            totalPrice,
-            platformFeeCut,
-            royaltyCut,
-            royaltyRecipient,
+            _totalPrice,
+            _platformFeeCut,
+            _royaltyCut,
+            _royaltyRecipient,
             targetListing.paymentToken
         );
         transferToken(
@@ -367,33 +367,34 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
             targetListing.creator,
             msg.sender,
             targetListing.tokenId,
-            quantity,
+            _quantity,
             targetListing.tokenType
         );
-        emit BuyLog(listingId, msg.sender, quantity, targetListing.price);
+        emit BuyLog(_listingId, msg.sender, _quantity, targetListing.price);
     }
 
     /**
-     * @dev Allows a user to place a bid on a listing.
-     * @param listingId Unique identifier of the listing
-     * @param bidPrice Bid price in the payment token
+     * @dev Allows a user _to place a bid on a listing.
+     * @param _listingId Unique identifier of the listing
+     * @param _bidPrice Bid _price in the payment token
+     * @param _quantity the number of token you want _to bid on
      */
     function bid(
-        uint256 listingId,
-        uint256 bidPrice,
-        uint256 quantity
+        uint256 _listingId,
+        uint256 _bidPrice,
+        uint256 _quantity
     ) external {
         require(msg.sender != address(0), "");
-        require(bidPrice != 0, "");
-        require(quantity != 0, "");
-        Listing memory targetListing = listings[listingId];
+        require(_bidPrice != 0, "");
+        require(_quantity != 0, "");
+        Listing memory targetListing = listings[_listingId];
         require(block.timestamp < targetListing.end, "");
         if (targetListing.tokenType == TokenType.ERC721) {
-            quantity = 1;
+            _quantity = 1;
         }
-        Bid memory lastBid = bidsMap[listingId][msg.sender];
-        Bid memory newBid = Bid(msg.sender, bidPrice, quantity);
-        Bid[] memory bidsOfListing = bids[listingId];
+        Bid memory lastBid = bidsMap[_listingId][msg.sender];
+        Bid memory newBid = Bid(msg.sender, _bidPrice, _quantity);
+        Bid[] memory bidsOfListing = bids[_listingId];
         uint256 newBidPrice = newBid.bid;
         uint256 totalBidPrice = newBid.bid * newBid.quantity;
         if (bidsOfListing.length > 0) {
@@ -416,37 +417,37 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
             msg.sender,
             lastBid.bid * lastBid.quantity
         );
-        bids[listingId].push(newBid);
-        bidsMap[listingId][msg.sender] = newBid;
+        bids[_listingId].push(newBid);
+        bidsMap[_listingId][msg.sender] = newBid;
         if (targetListing.end - block.timestamp <= TIME_BUFFER) {
             targetListing.end += TIME_BUFFER;
         }
-        listings[listingId] = targetListing;
+        listings[_listingId] = targetListing;
         checkBalanceAndAllowance(
             msg.sender,
             targetListing.paymentToken,
-            bidPrice * quantity
+            _bidPrice * _quantity
         );
         IERC20(targetListing.paymentToken).safeTransferFrom(
             msg.sender,
             address(this),
-            bidPrice * quantity
+            _bidPrice * _quantity
         );
-        emit BidLog(listingId, msg.sender, newBidPrice, quantity);
+        emit BidLog(_listingId, msg.sender, newBidPrice, _quantity);
     }
 
     /**
-     * @dev Allows the creator to close an auction listing.
-     * @param listingId Unique identifier of the listing
+     * @dev Allows the creator _to close an auction listing.
+     * @param _listingId Unique identifier of the listing
      */
-    function closeAuction(uint256 listingId) external {
-        Listing memory targetListing = listings[listingId];
+    function closeAuction(uint256 _listingId) external {
+        Listing memory targetListing = listings[_listingId];
         require(targetListing.isAuction, "");
         require(!targetListing.ended, "");
         require(block.timestamp > targetListing.end, "");
         targetListing.ended = true;
-        listings[listingId] = targetListing;
-        Bid[] memory listingBids = bids[listingId];
+        listings[_listingId] = targetListing;
+        Bid[] memory listingBids = bids[_listingId];
         if (listingBids.length == 0) {
             transferToken(
                 targetListing.tokenContract,
@@ -456,29 +457,29 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
                 targetListing.quantity,
                 targetListing.tokenType
             );
-            emit CancelAuctionLog(listingId);
+            emit CancelAuctionLog(_listingId);
         } else {
             Bid memory highestBid = listingBids[listingBids.length - 1];
-            bidsMap[listingId][highestBid.bidder] = Bid(
+            bidsMap[_listingId][highestBid.bidder] = Bid(
                 highestBid.bidder,
                 0,
                 0
             );
-            uint256 totalPrice = highestBid.bid * highestBid.quantity;
-            uint256 platformFeeCut = (totalPrice * PLATFORM_FEE) / MAX_BPS;
-            (address royaltyRecipient, uint256 royaltyCut) = getRoyalty(
+            uint256 _totalPrice = highestBid.bid * highestBid.quantity;
+            uint256 _platformFeeCut = (_totalPrice * PLATFORM_FEE) / MAX_BPS;
+            (address _royaltyRecipient, uint256 _royaltyCut) = getRoyalty(
                 targetListing.tokenContract,
                 targetListing.tokenId,
-                totalPrice,
-                platformFeeCut
+                _totalPrice,
+                _platformFeeCut
             );
             payout(
                 address(this),
                 targetListing.creator,
-                totalPrice,
-                platformFeeCut,
-                royaltyCut,
-                royaltyRecipient,
+                _totalPrice,
+                _platformFeeCut,
+                _royaltyCut,
+                _royaltyRecipient,
                 targetListing.paymentToken
             );
             transferToken(
@@ -500,7 +501,7 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
                 );
             }
             emit CloseAuctionLog(
-                listingId,
+                _listingId,
                 highestBid.bidder,
                 highestBid.quantity,
                 highestBid.bid
@@ -509,115 +510,115 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
     }
 
     /**
-     * @dev Withdraws the user's bid from a listing.
-     * @param listingId The ID of the listing.
+     * @dev Withdraws the user's bid _from a listing.
+     * @param _listingId The ID of the listing.
      */
-    function withdrawal(uint256 listingId) external {
-        require(listings[listingId].ended, "");
-        require(listings[listingId].isAuction, "");
-        Bid memory userBal = bidsMap[listingId][msg.sender];
+    function withdrawal(uint256 _listingId) external {
+        require(listings[_listingId].ended, "");
+        require(listings[_listingId].isAuction, "");
+        Bid memory userBal = bidsMap[_listingId][msg.sender];
         require(userBal.bid > 0 && userBal.quantity > 0, "");
-        bidsMap[listingId][msg.sender] = Bid(userBal.bidder, 0, 0);
-        IERC20(listings[listingId].paymentToken).safeTransfer(
+        bidsMap[_listingId][msg.sender] = Bid(userBal.bidder, 0, 0);
+        IERC20(listings[_listingId].paymentToken).safeTransfer(
             msg.sender,
             userBal.bid * userBal.quantity
         );
-        emit Withdrawn(listingId, msg.sender, userBal.bid * userBal.quantity);
+        emit Withdrawn(_listingId, msg.sender, userBal.bid * userBal.quantity);
     }
 
     /**
-     * @dev Internal function to transfer tokens (NFTs or ERC20) from one address to another.
-     * @param tokenContract Address of the token contract
-     * @param from Address from which tokens are transferred
-     * @param to Address to which tokens are transferred
-     * @param tokenId Token ID (for ERC721) or token type ID (for ERC1155)
-     * @param quantity Quantity of tokens (for ERC1155, set to 1 for ERC721)
-     * @param tokenType Type of token (ERC721 or ERC1155)
+     * @dev Internal function _to transfer tokens (NFTs or ERC20) _from one address _to another.
+     * @param _tokenContract Address of the token contract
+     * @param _from Address _from which tokens are transferred
+     * @param _to Address _to which tokens are transferred
+     * @param _tokenId Token ID (for ERC721) or token type ID (for ERC1155)
+     * @param _quantity Quantity of tokens (for ERC1155, set _to 1 for ERC721)
+     * @param _tokenType Type of token (ERC721 or ERC1155)
      */
     function transferToken(
-        address tokenContract,
-        address from,
-        address to,
-        uint256 tokenId,
-        uint256 quantity,
-        TokenType tokenType
+        address _tokenContract,
+        address _from,
+        address _to,
+        uint256 _tokenId,
+        uint256 _quantity,
+        TokenType _tokenType
     ) internal {
-        if (tokenType == TokenType.ERC721) {
-            IERC721(tokenContract).safeTransferFrom(from, to, tokenId);
+        if (_tokenType == TokenType.ERC721) {
+            IERC721(_tokenContract).safeTransferFrom(_from, _to, _tokenId);
         } else {
-            IERC1155(tokenContract).safeTransferFrom(
-                from,
-                to,
-                tokenId,
-                quantity,
+            IERC1155(_tokenContract).safeTransferFrom(
+                _from,
+                _to,
+                _tokenId,
+                _quantity,
                 ""
             );
         }
     }
 
     function payout(
-        address from,
-        address to,
-        uint256 amount,
-        uint256 platformFeeCut,
-        uint256 royaltyCut,
-        address royaltyRecipient,
-        address paymentToken
+        address _from,
+        address _to,
+        uint256 _amount,
+        uint256 _platformFeeCut,
+        uint256 _royaltyCut,
+        address _royaltyRecipient,
+        address _paymentToken
     ) internal {
-        if (from == address(this)) {
-            IERC20(paymentToken).safeTransfer(PLATFORM_OWNER, platformFeeCut);
-            if (royaltyCut != 0 && royaltyRecipient != address(0)) {
-                IERC20(paymentToken).safeTransfer(royaltyRecipient, royaltyCut);
+        if (_from == address(this)) {
+            IERC20(_paymentToken).safeTransfer(PLATFORM_OWNER, _platformFeeCut);
+            if (_royaltyCut != 0 && _royaltyRecipient != address(0)) {
+                IERC20(_paymentToken).safeTransfer(_royaltyRecipient, _royaltyCut);
             }
-            IERC20(paymentToken).safeTransfer(
-                to,
-                amount - (platformFeeCut + royaltyCut)
+            IERC20(_paymentToken).safeTransfer(
+                _to,
+                _amount - (_platformFeeCut + _royaltyCut)
             );
         } else {
-            checkBalanceAndAllowance(from, paymentToken, amount);
-            IERC20(paymentToken).safeTransferFrom(
-                from,
+            checkBalanceAndAllowance(_from, _paymentToken, _amount);
+            IERC20(_paymentToken).safeTransferFrom(
+                _from,
                 PLATFORM_OWNER,
-                platformFeeCut
+                _platformFeeCut
             );
-            if (royaltyCut != 0 && royaltyRecipient != address(0)) {
-                IERC20(paymentToken).safeTransferFrom(
-                    from,
-                    royaltyRecipient,
-                    royaltyCut
+            if (_royaltyCut != 0 && _royaltyRecipient != address(0)) {
+                IERC20(_paymentToken).safeTransferFrom(
+                    _from,
+                    _royaltyRecipient,
+                    _royaltyCut
                 );
             }
-            IERC20(paymentToken).safeTransferFrom(
-                from,
-                to,
-                amount - (platformFeeCut + royaltyCut)
+            IERC20(_paymentToken).safeTransferFrom(
+                _from,
+                _to,
+                _amount - (_platformFeeCut + _royaltyCut)
             );
         }
     }
 
     /**
-     * @dev Internal function to retrieve royalty information for a given token.
-     * @param tokenContract Address of the token contract
-     * @param tokenId Token ID
-     * @param totalPrice Total price of the transaction
-     * @param platformFeeCut Platform fee cut
-     * @return royaltyRecipient Address of the royalty recipient
-     * @return royaltyCut Amount of royalty
+     * @dev Internal function _to retrieve royalty information for a given token.
+     * @param _tokenContract Address of the token contract
+     * @param _tokenId Token ID
+     * @param _totalPrice Total _price of the transaction
+     * @param _platformFeeCut Platform fee cut
+     * @return _royaltyRecipient Address of the royalty recipient
+     * @return _royaltyCut Amount of royalty
      */
     function getRoyalty(
-        address tokenContract,
-        uint256 tokenId,
-        uint256 totalPrice,
-        uint256 platformFeeCut
-    ) internal view returns (address royaltyRecipient, uint256 royaltyCut) {
-        try IERC2981(tokenContract).royaltyInfo(tokenId, totalPrice) returns (
+        address _tokenContract,
+        uint256 _tokenId,
+        uint256 _totalPrice,
+        uint256 _platformFeeCut
+    ) internal view returns (address _royaltyRecipient, uint256 _royaltyCut) {
+        try IERC2981(_tokenContract).royaltyInfo(_tokenId, _totalPrice) returns (
             address royaltyFeeRecipient,
             uint256 royaltyFeeAmount
         ) {
             if (royaltyFeeRecipient != address(0) && royaltyFeeAmount > 0) {
                 require(
-                    royaltyFeeAmount + platformFeeCut <= totalPrice,
-                    "fees exceed the price"
+                    royaltyFeeAmount + _platformFeeCut <= _totalPrice,
+                    "fees exceed the _price"
                 );
                 return (royaltyFeeRecipient, royaltyFeeAmount);
             }
@@ -625,39 +626,39 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
     }
 
     function getListing(
-        uint256 listingId
+        uint256 _listingId
     ) external view returns (Listing memory) {
-        return (listings[listingId]);
+        return (listings[_listingId]);
     }
 
     function getListingBids(
-        uint256 listingId
+        uint256 _listingId
     ) external view returns (Bid[] memory) {
-        return (bids[listingId]);
+        return (bids[_listingId]);
     }
 
     function getUserBidBalance(
-        uint256 listingId,
-        address userAddress
+        uint256 _listingId,
+        address _userAddress
     ) external view returns (Bid memory) {
-        return (bidsMap[listingId][userAddress]);
+        return (bidsMap[_listingId][_userAddress]);
     }
 
     /**
-     * @dev Internal function to determine the type of a token (ERC721 or ERC1155).
-     * @param contractAddress Address of the token contract
+     * @dev Internal function _to determine the type of a token (ERC721 or ERC1155).
+     * @param _contractAddress Address of the token contract
      * @return tokenType Type of token (ERC721 or ERC1155)
      */ function getTokenType(
-        address contractAddress
+        address _contractAddress
     ) internal view returns (TokenType tokenType) {
         if (
-            IERC165(contractAddress).supportsInterface(
+            IERC165(_contractAddress).supportsInterface(
                 type(IERC1155).interfaceId
             )
         ) {
             tokenType = TokenType.ERC1155;
         } else if (
-            IERC165(contractAddress).supportsInterface(
+            IERC165(_contractAddress).supportsInterface(
                 type(IERC721).interfaceId
             )
         ) {
@@ -668,48 +669,48 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
     }
 
     /**
-     * @dev Internal function to validate token ownership and approval.
-     * @param token Address of the token contract
-     * @param tokenId Token ID (for ERC721) or token type ID (for ERC1155)
-     * @param owner Expected owner address
-     * @param quantity Quantity of tokens (for ERC1155, set to 1 for ERC721)
-     * @param tokenType Type of token (ERC721 or ERC1155)
+     * @dev Internal function _to validate token ownership and approval.
+     * @param _token Address of the token contract
+     * @param _tokenId Token ID (for ERC721) or token type ID (for ERC1155)
+     * @param _owner Expected owner address
+     * @param _quantity Quantity of tokens (for ERC1155, set _to 1 for ERC721)
+     * @param _tokenType Type of token (ERC721 or ERC1155)
      */
     function validateToken(
-        address token,
-        uint256 tokenId,
-        address owner,
-        uint256 quantity,
-        TokenType tokenType
+        address _token,
+        uint256 _tokenId,
+        address _owner,
+        uint256 _quantity,
+        TokenType _tokenType
     ) internal view {
-        if (tokenType == TokenType.ERC721) {
-            IERC721 token721 = IERC721(token);
-            require(owner == token721.ownerOf(tokenId), "");
-            address approved = token721.getApproved(tokenId);
+        if (_tokenType == TokenType.ERC721) {
+            IERC721 token721 = IERC721(_token);
+            require(_owner == token721.ownerOf(_tokenId), "");
+            address approved = token721.getApproved(_tokenId);
             require(approved == address(this), "");
         } else {
-            IERC1155 token1155 = IERC1155(token);
-            uint256 balanceOf = token1155.balanceOf(owner, tokenId);
-            require(quantity <= balanceOf, "");
-            bool isApprove = token1155.isApprovedForAll(owner, address(this));
+            IERC1155 token1155 = IERC1155(_token);
+            uint256 balanceOf = token1155.balanceOf(_owner, _tokenId);
+            require(_quantity <= balanceOf, "");
+            bool isApprove = token1155.isApprovedForAll(_owner, address(this));
             require(isApprove, "");
         }
     }
 
     /**
-     * @dev Internal function to check user's balance and allowance for a payment token.
-     * @param checkAddress Address to check
-     * @param token Address of the payment token
-     * @param price Total price of the transaction
+     * @dev Internal function _to check user's balance and allowance for a payment token.
+     * @param _checkAddress Address _to check
+     * @param _token Address of the payment token
+     * @param _price Total _price of the transaction
      */
     function checkBalanceAndAllowance(
-        address checkAddress,
-        address token,
-        uint256 price
+        address _checkAddress,
+        address _token,
+        uint256 _price
     ) internal view {
         require(
-            price <= IERC20(token).balanceOf(checkAddress) &&
-                price <= IERC20(token).allowance(checkAddress, address(this)),
+            _price <= IERC20(_token).balanceOf(_checkAddress) &&
+                _price <= IERC20(_token).allowance(_checkAddress, address(this)),
             ""
         );
     }
