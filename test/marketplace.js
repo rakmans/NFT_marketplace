@@ -215,6 +215,7 @@ describe("marketplace", function () {
                 await marketplace.connect(a4).closeAuction(0);
                 const ownerBal = await ether.balanceOf(owner);
                 expect(ownerBal).to.be.equal(beforeOwnerBal + 900n);
+                await expect(marketplace.closeAuction(0)).to.be.reverted;
                 const withdrawMony = async (a) => {
                     const beforeBal = await ether.balanceOf(a);
                     const bidsAmount = await marketplace.getUserBidBalance(

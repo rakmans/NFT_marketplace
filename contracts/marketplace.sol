@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
-import "@openzeppelin/contracts/interfaces/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
-import "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
-import "@openzeppelin/contracts/token/common/ERC2981.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import {IERC1155} from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
+import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
+import {ERC1155Holder} from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
+import {ERC721Holder} from "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
+import {IERC2981} from "@openzeppelin/contracts/token/common/ERC2981.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
  * @title NftMarketplace
@@ -62,23 +62,23 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
     /**
      * @dev Platform fee
      */
-    uint256 PLATFORM_FEE;
+    uint256 public PLATFORM_FEE;
     /**
      * @dev Maximum basis points
      */
-    uint256 MAX_BPS;
+    uint256 public MAX_BPS;
     /**
      * @dev Bid buffer basis points
      */
-    uint256 BID_BUFFER_BPS;
+    uint256 public BID_BUFFER_BPS;
     /**
      * @dev Platform owner
      */
-    address PLATFORM_OWNER;
+    address public PLATFORM_OWNER;
     /**
      * @dev Time buffer
      */
-    uint256 TIME_BUFFER;
+    uint256 public TIME_BUFFER;
 
     /**
      * @dev Mapping of listing ID _to bids
@@ -89,7 +89,7 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
     /**
      * @dev Array of listings
      */
-    Listing[] listings;
+    Listing[] public listings;
 
     /**
      * @dev Event emitted when a listing is created
@@ -159,9 +159,14 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
         uint256 value
     );
 
+    error listingIsNotAuction();
+    error invalidBidPrice();
+    error listingEnded();
+    error listingNotEnded();
+    error noZeroParameters();
+    error invalidAddress();
     error onlyCreatorCanCall();
     error listingDeleted();
-    error listingEnded();
 
     /**
      * @dev Error thrown when only the creator can call a function
@@ -214,10 +219,12 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
         uint256 _quantity,
         bool _isAuction
     ) external {
-        require(_price != 0, "_price != 0");
-        require(_durationUntilEnd != 0, "duration != 0");
-        require(_quantity != 0, "_quantity != 0");
-        require(_paymentToken != address(0), "");
+        if (_price == 0 || _durationUntilEnd == 0 || _quantity == 0) {
+            revert noZeroParameters();
+        }
+        if (_paymentToken == address(0)) {
+            revert invalidAddress();
+        }
         address creator = msg.sender;
         TokenType tokenType = getTokenType(_tokenContract);
         _quantity = tokenType == TokenType.ERC721 ? 1 : _quantity;
@@ -272,10 +279,12 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
         uint256 _durationUntilEnd,
         uint256 _quantity
     ) external onlyCreator(_listingId) {
-        require(_price != 0, "");
-        require(_durationUntilEnd != 0, "");
-        require(_quantity != 0, "");
-        require(_paymentToken != address(0), "");
+        if (_price == 0 || _durationUntilEnd == 0 || _quantity == 0) {
+            revert noZeroParameters();
+        }
+        if (_paymentToken == address(0)) {
+            revert invalidAddress();
+        }
         Listing memory targetListing = listings[_listingId];
         if (targetListing.tokenType == TokenType.ERC721) {
             _quantity = 1;
@@ -341,6 +350,7 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
         uint256 _listingId,
         uint256 _quantity
     ) external notEnded(_listingId) {
+        ////////////////////////////////is direct listing modifire
         Listing memory targetListing = listings[_listingId];
         uint256 _totalPrice = targetListing.price * _quantity;
         targetListing.quantity -= _quantity;
@@ -384,13 +394,18 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
         uint256 _bidPrice,
         uint256 _quantity
     ) external {
-        require(msg.sender != address(0), "");
-        require(_bidPrice != 0, "");
-        require(_quantity != 0, "");
+        if (_bidPrice == 0 || _quantity == 0) {
+            revert noZeroParameters();
+        }
         Listing memory targetListing = listings[_listingId];
-        require(block.timestamp < targetListing.end, "");
+        if (block.timestamp >= targetListing.end) {
+            revert listingEnded();
+        }
         if (targetListing.tokenType == TokenType.ERC721) {
             _quantity = 1;
+        }
+        if (!targetListing.isAuction) {
+            revert listingIsNotAuction();
         }
         Bid memory lastBid = bidsMap[_listingId][msg.sender];
         Bid memory newBid = Bid(msg.sender, _bidPrice, _quantity);
@@ -403,15 +418,18 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
             ];
             uint256 currentBidPrice = currentHighestBid.bid *
                 currentHighestBid.quantity;
-            require(
-                (totalBidPrice > currentBidPrice &&
-                    ((totalBidPrice - currentBidPrice) * MAX_BPS) /
-                        currentBidPrice >=
-                    BID_BUFFER_BPS),
-                ""
-            );
+            if (
+                totalBidPrice < currentBidPrice ||
+                ((totalBidPrice - currentBidPrice) * MAX_BPS) /
+                    currentBidPrice <
+                BID_BUFFER_BPS
+            ) {
+                revert invalidBidPrice();
+            }
         } else {
-            require(newBidPrice >= targetListing.price, "");
+            if (newBidPrice < targetListing.price) {
+                revert invalidBidPrice();
+            }
         }
         IERC20(targetListing.paymentToken).safeTransfer(
             msg.sender,
@@ -442,9 +460,13 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
      */
     function closeAuction(uint256 _listingId) external {
         Listing memory targetListing = listings[_listingId];
-        require(targetListing.isAuction, "");
-        require(!targetListing.ended, "");
-        require(block.timestamp > targetListing.end, "");
+        require(block.timestamp >= targetListing.end, "");
+        if (!targetListing.isAuction) {
+            revert listingIsNotAuction();
+        }
+        if (targetListing.ended) {
+            revert listingEnded();
+        }
         targetListing.ended = true;
         listings[_listingId] = targetListing;
         Bid[] memory listingBids = bids[_listingId];
@@ -514,8 +536,12 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
      * @param _listingId The ID of the listing.
      */
     function withdrawal(uint256 _listingId) external {
-        require(listings[_listingId].ended, "");
-        require(listings[_listingId].isAuction, "");
+        if (!listings[_listingId].ended) {
+            revert listingNotEnded();
+        }
+        if (!listings[_listingId].isAuction) {
+            revert listingIsNotAuction();
+        }
         Bid memory userBal = bidsMap[_listingId][msg.sender];
         require(userBal.bid > 0 && userBal.quantity > 0, "");
         bidsMap[_listingId][msg.sender] = Bid(userBal.bidder, 0, 0);
@@ -568,7 +594,10 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
         if (_from == address(this)) {
             IERC20(_paymentToken).safeTransfer(PLATFORM_OWNER, _platformFeeCut);
             if (_royaltyCut != 0 && _royaltyRecipient != address(0)) {
-                IERC20(_paymentToken).safeTransfer(_royaltyRecipient, _royaltyCut);
+                IERC20(_paymentToken).safeTransfer(
+                    _royaltyRecipient,
+                    _royaltyCut
+                );
             }
             IERC20(_paymentToken).safeTransfer(
                 _to,
@@ -611,10 +640,9 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
         uint256 _totalPrice,
         uint256 _platformFeeCut
     ) internal view returns (address _royaltyRecipient, uint256 _royaltyCut) {
-        try IERC2981(_tokenContract).royaltyInfo(_tokenId, _totalPrice) returns (
-            address royaltyFeeRecipient,
-            uint256 royaltyFeeAmount
-        ) {
+        try
+            IERC2981(_tokenContract).royaltyInfo(_tokenId, _totalPrice)
+        returns (address royaltyFeeRecipient, uint256 royaltyFeeAmount) {
             if (royaltyFeeRecipient != address(0) && royaltyFeeAmount > 0) {
                 require(
                     royaltyFeeAmount + _platformFeeCut <= _totalPrice,
@@ -710,7 +738,8 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
     ) internal view {
         require(
             _price <= IERC20(_token).balanceOf(_checkAddress) &&
-                _price <= IERC20(_token).allowance(_checkAddress, address(this)),
+                _price <=
+                IERC20(_token).allowance(_checkAddress, address(this)),
             ""
         );
     }
