@@ -352,25 +352,20 @@ describe("marketplace", function () {
                 await ether.transfer(a4, 1000);
                 await ether.transfer(a5, 1000);
                 await ether.transfer(otherAccount, 1000);
-                await rakmansERC1155.connect(otherAccount).mint(
-                    otherAccount,
-                    0,
-                    10,
-                    "0x0000000000000000000000000000000000000000000000000000000000000000"
-                );
-                await rakmansERC1155.connect(otherAccount).setApprovalForAll(
-                    marketplace.getAddress(),
-                    true
-                );
-                await marketplace.connect(otherAccount).createList(
-                    rakmansERC1155,
-                    0,
-                    ether,
-                    5,
-                    1000,
-                    10,
-                    true
-                );
+                await rakmansERC1155
+                    .connect(otherAccount)
+                    .mint(
+                        otherAccount,
+                        0,
+                        10,
+                        "0x0000000000000000000000000000000000000000000000000000000000000000"
+                    );
+                await rakmansERC1155
+                    .connect(otherAccount)
+                    .setApprovalForAll(marketplace.getAddress(), true);
+                await marketplace
+                    .connect(otherAccount)
+                    .createList(rakmansERC1155, 0, ether, 5, 1000, 10, true);
                 await ether.connect(a1).approve(marketplace.getAddress(), 40);
                 await marketplace.connect(a1).bid(0, 10, 4);
                 await ether.connect(a2).approve(marketplace.getAddress(), 90);
@@ -418,7 +413,9 @@ describe("marketplace", function () {
                 await withdrawMony(a3);
                 await expect(withdrawMony(a4)).to.be.reverted;
                 await withdrawMony(a5);
-                expect(await rakmansERC1155.balanceOf(highestBidder,0)).to.be.equal(10n);
+                expect(
+                    await rakmansERC1155.balanceOf(highestBidder, 0)
+                ).to.be.equal(10n);
             });
         });
     });

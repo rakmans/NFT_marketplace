@@ -1,8 +1,9 @@
 {
-  "extends": "solhint:recommended",
-  "rules":{
-    "var-name-mixedcase": "off",
-    "ignoreConstructors":"true",
-    "no-empty-blocks":"off"
-  }
+    "extends": "solhint:recommended",
+    "rules": {
+        "var-name-mixedcase": "off",
+        "no-empty-blocks": "off",
+        "gas-custom-errors": "off",
+        "func-visibility": ["warn", { "ignoreConstructors": true }]
+    }
 }

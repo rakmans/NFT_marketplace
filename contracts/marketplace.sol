@@ -159,7 +159,11 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
         uint256 value
     );
 
+    error timeIsOver();
+    error onlyOwner();
+    error notApproved();
     error listingIsNotAuction();
+    error listingIsAuction();
     error invalidBidPrice();
     error listingEnded();
     error listingNotEnded();
@@ -183,6 +187,33 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
     modifier notEnded(uint256 _listingId) {
         if (listings[_listingId].ended) {
             revert listingEnded();
+        }
+        _;
+    }
+    /**
+     * @dev Error thrown when a listing time is over
+     */
+    modifier timeIsNotOver(uint256 _listingId) {
+        if (block.timestamp < listings[_listingId].end) {
+            revert listingEnded();
+        }
+        _;
+    }
+    /**
+     * @dev Error thrown when a listing is not auction
+     */
+    modifier isAuction(uint256 _listingId) {
+        if (!listings[_listingId].isAuction) {
+            revert listingIsNotAuction();
+        }
+        _;
+    }
+    /**
+     * @dev Error thrown when a listing is auction
+     */
+    modifier isDirectListing(uint256 _listingId) {
+        if (listings[_listingId].isAuction) {
+            revert listingIsAuction();
         }
         _;
     }
@@ -349,8 +380,12 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
     function buy(
         uint256 _listingId,
         uint256 _quantity
-    ) external notEnded(_listingId) {
-        ////////////////////////////////is direct listing modifire
+    )
+        external
+        notEnded(_listingId)
+        isDirectListing(_listingId)
+        timeIsNotOver(_listingId)
+    {
         Listing memory targetListing = listings[_listingId];
         uint256 _totalPrice = targetListing.price * _quantity;
         targetListing.quantity -= _quantity;
@@ -393,19 +428,13 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
         uint256 _listingId,
         uint256 _bidPrice,
         uint256 _quantity
-    ) external {
+    ) external isAuction(_listingId) timeIsNotOver(_listingId){
         if (_bidPrice == 0 || _quantity == 0) {
             revert noZeroParameters();
         }
         Listing memory targetListing = listings[_listingId];
-        if (block.timestamp >= targetListing.end) {
-            revert listingEnded();
-        }
         if (targetListing.tokenType == TokenType.ERC721) {
             _quantity = 1;
-        }
-        if (!targetListing.isAuction) {
-            revert listingIsNotAuction();
         }
         Bid memory lastBid = bidsMap[_listingId][msg.sender];
         Bid memory newBid = Bid(msg.sender, _bidPrice, _quantity);
@@ -458,11 +487,10 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
      * @dev Allows the creator _to close an auction listing.
      * @param _listingId Unique identifier of the listing
      */
-    function closeAuction(uint256 _listingId) external {
+    function closeAuction(uint256 _listingId) external isAuction(_listingId) {
         Listing memory targetListing = listings[_listingId];
-        require(block.timestamp >= targetListing.end, "");
-        if (!targetListing.isAuction) {
-            revert listingIsNotAuction();
+        if (block.timestamp < targetListing.end) {
+            revert listingNotEnded();
         }
         if (targetListing.ended) {
             revert listingEnded();
@@ -535,15 +563,15 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
      * @dev Withdraws the user's bid _from a listing.
      * @param _listingId The ID of the listing.
      */
-    function withdrawal(uint256 _listingId) external {
+    function withdrawal(uint256 _listingId) external isAuction(_listingId) {
         if (!listings[_listingId].ended) {
             revert listingNotEnded();
         }
-        if (!listings[_listingId].isAuction) {
-            revert listingIsNotAuction();
-        }
         Bid memory userBal = bidsMap[_listingId][msg.sender];
-        require(userBal.bid > 0 && userBal.quantity > 0, "");
+        require(
+            userBal.bid > 0 && userBal.quantity > 0,
+            "you have not made an bid"
+        );
         bidsMap[_listingId][msg.sender] = Bid(userBal.bidder, 0, 0);
         IERC20(listings[_listingId].paymentToken).safeTransfer(
             msg.sender,
@@ -646,7 +674,7 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
             if (royaltyFeeRecipient != address(0) && royaltyFeeAmount > 0) {
                 require(
                     royaltyFeeAmount + _platformFeeCut <= _totalPrice,
-                    "fees exceed the _price"
+                    "fees exceed the price"
                 );
                 return (royaltyFeeRecipient, royaltyFeeAmount);
             }
@@ -713,15 +741,23 @@ contract NftMarketplace is ERC1155Holder, ERC721Holder {
     ) internal view {
         if (_tokenType == TokenType.ERC721) {
             IERC721 token721 = IERC721(_token);
-            require(_owner == token721.ownerOf(_tokenId), "");
+            if (_owner != token721.ownerOf(_tokenId)) {
+                revert onlyOwner();
+            }
             address approved = token721.getApproved(_tokenId);
-            require(approved == address(this), "");
+            if (approved != address(this)) {
+                revert notApproved();
+            }
         } else {
             IERC1155 token1155 = IERC1155(_token);
             uint256 balanceOf = token1155.balanceOf(_owner, _tokenId);
-            require(_quantity <= balanceOf, "");
+            if (balanceOf >= _quantity) {
+                revert onlyOwner();
+            }
             bool isApprove = token1155.isApprovedForAll(_owner, address(this));
-            require(isApprove, "");
+            if (!isApprove) {
+                revert notApproved();
+            }
         }
     }
 
